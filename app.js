@@ -1,2214 +1,631 @@
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-import { getFirestore, doc, setDoc, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-
-const firebaseConfig = {
-  apiKey: "AIzaSyBxhp9c0GHGX0JHEjda9CBmuKTfD0MdQrg",
-  authDomain: "measurements-bf85a.firebaseapp.com",
-  projectId: "measurements-bf85a",
-  storageBucket: "measurements-bf85a.firebasestorage.app",
-  messagingSenderId: "116446528416",
-  appId: "1:116446528416:web:eefd425fe30e3fb75c1ac5"
-};
-const firebaseApp = initializeApp(firebaseConfig);
-const db = getFirestore(firebaseApp);
-enableIndexedDbPersistence(db).catch((err) => console.warn("Offline:", err.code));
-
-// =========================================================
-// CHECKLISTS CONTEXTUAIS POR TIPO DE AMBIENTE
-// =========================================================
-const CHECKLISTS_CONTEXTUAIS = {
-    banheiro: {
-        label: "Banheiro / Lavabo",
-        sections: [
-            { titulo: "Hidráulica", itens: [
-                "Ponto de água fria do lavatório",
-                "Ponto de esgoto do lavatório",
-                "Ponto de água fria do vaso",
-                "Ponto de esgoto do vaso",
-                "Ponto de água fria do chuveiro",
-                "Ponto de água quente do chuveiro (se houver)",
-                "Registro de gaveta acessível",
-                "Ralo sifonado no box",
-                "Ralo sifonado fora do box"
-            ]},
-            { titulo: "Louças e Metais", itens: [
-                "Vaso sanitário instalado",
-                "Cuba / lavatório instalado",
-                "Torneira do lavatório",
-                "Chuveiro / ducha",
-                "Box (instalado ou previsto)",
-                "Espelho previsto"
-            ]},
-            { titulo: "Elétrica", itens: [
-                "Tomada próxima ao lavatório (com DR)",
-                "Interruptor interno",
-                "Ponto de iluminação no teto",
-                "Ponto de exaustão / ventilação",
-                "Tomada para chuveiro elétrico (se aplicável)"
-            ]},
-            { titulo: "Estrutural", itens: [
-                "Shaft aparente ou fechado",
-                "Nichos no box",
-                "Impermeabilização do piso",
-                "Impermeabilização das paredes do box"
-            ]}
-        ]
-    },
-    cozinha: {
-        label: "Cozinha",
-        sections: [
-            { titulo: "Hidráulica", itens: [
-                "Ponto de água fria da cuba",
-                "Ponto de esgoto da cuba",
-                "Ponto de água da máquina de lavar (se aplicável)",
-                "Ponto de esgoto da máquina de lavar (se aplicável)",
-                "Registro de gaveta acessível",
-                "Ponto de filtro de água"
-            ]},
-            { titulo: "Elétrica", itens: [
-                "Tomada para geladeira",
-                "Tomada para forno elétrico",
-                "Tomada para micro-ondas",
-                "Tomada para cooktop (se elétrico)",
-                "Tomada para coifa / depurador",
-                "Tomada para lava-louças",
-                "Tomadas da bancada (mínimo 2)",
-                "Interruptores",
-                "Ponto de iluminação geral",
-                "Ponto de iluminação sob armários"
-            ]},
-            { titulo: "Marcenaria e Bancada", itens: [
-                "Altura da bancada",
-                "Profundidade da bancada",
-                "Espaço para armários inferiores",
-                "Espaço para armários superiores",
-                "Abertura de portas de armário",
-                "Circulação entre bancadas"
-            ]},
-            { titulo: "Eletrodomésticos", itens: [
-                "Espaço para geladeira (largura x profundidade)",
-                "Espaço para fogão / cooktop",
-                "Espaço para forno",
-                "Espaço para coifa",
-                "Espaço para lava-louças",
-                "Interferências (tubulação, esquadria)"
-            ]}
-        ]
-    },
-    quarto: {
-        label: "Quarto / Suíte",
-        sections: [
-            { titulo: "Dimensões", itens: [
-                "Comprimento da parede da cama",
-                "Largura da parede do guarda-roupa",
-                "Espaço para circulação ao redor da cama",
-                "Espaço para abertura do guarda-roupa"
-            ]},
-            { titulo: "Elétrica", itens: [
-                "Tomadas nas cabeceiras",
-                "Tomada para TV",
-                "Tomada para ar-condicionado",
-                "Interruptor de entrada",
-                "Interruptor de cabeceira",
-                "Ponto de iluminação no teto",
-                "Ponto de iluminação nas cabeceiras"
-            ]},
-            { titulo: "Esquadrias", itens: [
-                "Janela: largura, altura, peitoril",
-                "Cortina: espaço e tipo",
-                "Persiana: espaço e tipo",
-                "Porta: largura, altura, sentido de abertura"
-            ]},
-            { titulo: "Marcenaria", itens: [
-                "Profundidade disponível para guarda-roupa",
-                "Altura disponível para armário",
-                "Interferências (tomadas, janelas, tubulação)"
-            ]}
-        ]
-    },
-    varanda: {
-        label: "Varanda / Sacada",
-        sections: [
-            { titulo: "Estrutural", itens: [
-                "Guarda-corpo (altura e tipo)",
-                "Piso e desnível em relação ao interior",
-                "Ralo de escoamento",
-                "Laje para condensadora (se houver)"
-            ]},
-            { titulo: "Hidráulica e Gás", itens: [
-                "Ponto de água (se gourmet)",
-                "Ponto de esgoto (se gourmet)",
-                "Ponto de gás (se churrasqueira)",
-                "Registro acessível"
-            ]},
-            { titulo: "Elétrica", itens: [
-                "Tomada (área molhada — com DR)",
-                "Ponto de iluminação",
-                "Interruptor"
-            ]},
-            { titulo: "Regras do Condomínio", itens: [
-                "Fechamento permitido?",
-                "Alteração de fachada permitida?",
-                "Regras para churrasqueira / gourmet"
-            ]}
-        ]
-    },
-    sala: {
-        label: "Sala (Estar / Jantar)",
-        sections: [
-            { titulo: "Dimensões", itens: [
-                "Comprimento total da sala",
-                "Largura da área de estar",
-                "Largura da área de jantar",
-                "Distância entre sofá e TV",
-                "Circulação principal"
-            ]},
-            { titulo: "Elétrica", itens: [
-                "Tomadas na parede da TV",
-                "Tomada para rack / home theater",
-                "Tomadas próximas ao sofá",
-                "Tomada para ar-condicionado",
-                "Pontos de internet / rede",
-                "Interruptores",
-                "Ponto de iluminação central",
-                "Pontos de iluminação auxiliar"
-            ]},
-            { titulo: "Esquadrias e Cortinas", itens: [
-                "Janela: largura, altura, peitoril",
-                "Porta de entrada: largura, altura, sentido",
-                "Espaço para cortina",
-                "Espaço para persiana"
-            ]}
-        ]
-    },
-    lavanderia: {
-        label: "Lavanderia / Área de Serviço",
-        sections: [
-            { titulo: "Hidráulica", itens: [
-                "Ponto de água do tanque",
-                "Ponto de esgoto do tanque",
-                "Ponto de água da máquina de lavar",
-                "Ponto de esgoto da máquina de lavar",
-                "Registro acessível"
-            ]},
-            { titulo: "Elétrica", itens: [
-                "Tomada para máquina de lavar (com DR)",
-                "Tomada para secadora (se houver)",
-                "Tomada para ferro de passar",
-                "Ponto de iluminação",
-                "Interruptor"
-            ]},
-            { titulo: "Estrutural", itens: [
-                "Ventilação (janela ou exaustão)",
-                "Ponto para varal",
-                "Espaço para armários",
-                "Impermeabilização do piso"
-            ]}
-        ]
-    },
-    generico: {
-        label: "Ambiente (genérico)",
-        sections: [
-            { titulo: "Dimensões", itens: [
-                "Comprimento",
-                "Largura",
-                "Pé-direito",
-                "Área do piso",
-                "Perímetro"
-            ]},
-            { titulo: "Elétrica", itens: [
-                "Tomadas (quantidade e altura)",
-                "Interruptores",
-                "Ponto de iluminação"
-            ]},
-            { titulo: "Vãos", itens: [
-                "Portas: largura, altura, sentido",
-                "Janelas: largura, altura, peitoril"
-            ]},
-            { titulo: "Acabamentos", itens: [
-                "Piso",
-                "Parede",
-                "Teto",
-                "Rodapé"
-            ]}
-        ]
-    }
-};
-
-// Mapeia nome do ambiente para tipo de checklist
-function detectTipoAmbiente(nome) {
-    const n = nome.toLowerCase();
-    if (n.includes('banheiro') || n.includes('sanit') || n.includes('lavabo') || n.includes('wc')) return 'banheiro';
-    if (n.includes('cozinha')) return 'cozinha';
-    if (n.includes('quarto') || n.includes('suíte') || n.includes('suite') || n.includes('dormit')) return 'quarto';
-    if (n.includes('varanda') || n.includes('sacada') || n.includes('gourmet')) return 'varanda';
-    if (n.includes('sala') || n.includes('estar') || n.includes('jantar') || n.includes('living')) return 'sala';
-    if (n.includes('lavand') || n.includes('serviço') || n.includes('servico')) return 'lavanderia';
-    return 'generico';
+:root {
+    --primary: #007AFF;
+    --primary-glow: rgba(0, 122, 255, 0.3);
+    --secondary: #8E8E93;
+    --bg: #F2F2F7;
+    --bg-elevated: #FFFFFF;
+    --card-bg: rgba(255, 255, 255, 0.85);
+    --text: #1C1C1E;
+    --text-light: #8E8E93;
+    --border: rgba(60, 60, 67, 0.12);
+    --danger: #FF3B30;
+    --success: #34C759;
+    --warning: #FF9500;
+    --safe-bottom: env(safe-area-inset-bottom, 20px);
+    --safe-top: env(safe-area-inset-top, 0px);
+    --radius: 16px;
+    --input-bg: rgba(255, 255, 255, 0.6);
+    --nav-bg: rgba(255, 255, 255, 0.75);
+    --header-bg: rgba(242, 242, 247, 0.85);
+    --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.02);
 }
 
-// =========================================================
-// APP
-// =========================================================
-const app = {
-    data: {
-        projeto: { id: "apto801", nome: "Love 801 A 💝", dataVisita: new Date().toISOString().split('T')[0] },
-        ambientes: [],
-        checklist: [],
-        plantaImagem: null,
-        plantaPins: [],
-        divergencias: [],
-        marcenaria: []
-    },
-    currentAmbienteId: null,
-    currentTab: 'tab-geral',
-    qm: { tipo: null, ambienteId: null, paredeId: null, count: 0 },
-    div: { fotoTemp: null },
-    _unsynced: false,
-
-    planta: {
-        scale: 1, tx: 0, ty: 0, minScale: 0.5, maxScale: 5,
-        mode: 'view', pendingPin: null,
-        lastTouchDist: 0, lastTouchX: 0, lastTouchY: 0,
-        isPanning: false, isPinching: false
-    },
-    
-    vistoria: {
-    preparacao: {},
-    ambientes: {},
-    obsGeral: {}
-},
-
-    async init() {
-        this.loadLocalData();
-        this.renderAll();
-        if (navigator.onLine) await this.syncToFirebase();
-        window.addEventListener('online', () => {
-            this.updateSaveStatus('Sincronizando...', 'syncing');
-            this.syncToFirebase();
-        });
-        window.addEventListener('offline', () => this.updateSaveStatus('Offline (Salvo local)', 'saved'));
-        window.addEventListener('beforeunload', (e) => {
-            if (this._unsynced) { e.preventDefault(); e.returnValue = ''; }
-        });
-    },
-
-    // ========== TOAST + HAPTIC ==========
-    showToast(message, type = 'default', duration = 2200) {
-        const container = document.getElementById('toast-container');
-        if (!container) return;
-        const toast = document.createElement('div');
-        toast.className = `toast ${type}`;
-        toast.textContent = message;
-        container.appendChild(toast);
-        setTimeout(() => {
-            toast.classList.add('hide');
-            setTimeout(() => toast.remove(), 300);
-        }, duration);
-    },
-    haptic(intensity = 'light') {
-        if (navigator.vibrate) {
-            const patterns = { light: [10], medium: [20], heavy: [30] };
-            navigator.vibrate(patterns[intensity] || [10]);
-        }
-    },
-    markUnsynced() {
-        this._unsynced = true;
-        const dot = document.getElementById('unsync-dot');
-        if (dot) dot.classList.add('active');
-        this.updateSaveStatus('Não sincronizado', 'unsynced');
-    },
-
-    // ========== PERSISTÊNCIA ==========
-    saveLocal() {
-        try {
-            localStorage.setItem('vistoriaAppData', JSON.stringify(this.data));
-            this.updateSaveStatus('Salvo localmente', 'saved');
-            this.markUnsynced();
-        } catch (e) {
-            this.showToast("Erro ao salvar. Armazenamento cheio.", 'error');
-        }
-    },
-    loadLocalData() {
-        const saved = localStorage.getItem('vistoriaAppData');
-        if (saved) {
-            this.data = JSON.parse(saved);
-            if (!this.data.vistoria) this.data.vistoria = { preparacao: {}, ambientes: {}, obsGeral: {} };
-            if (!this.data.plantaPins) this.data.plantaPins = [];
-            if (!this.data.divergencias) this.data.divergencias = [];
-            if (!this.data.marcenaria) this.data.marcenaria = [];
-        } else {
-            this.data.ambientes = [
-                { id: '1', nome: 'Estar/Jantar', comp: 4.26, larg: 2.40, peDireito: null, paredes: [], elementos: [], fotos: [], checklistCtx: {} },
-                { id: '2', nome: 'Cozinha', comp: 4.33, larg: 1.60, peDireito: null, paredes: [], elementos: [], fotos: [], checklistCtx: {} },
-                { id: '3', nome: 'Área de Serviço', comp: null, larg: null, peDireito: null, paredes: [], elementos: [], fotos: [], checklistCtx: {} },
-                { id: '4', nome: 'Varanda Gourmet', comp: 2.40, larg: 1.75, peDireito: null, paredes: [], elementos: [], fotos: [], checklistCtx: {} },
-                { id: '5', nome: 'Quarto 1', comp: 2.95, larg: 2.40, peDireito: null, paredes: [], elementos: [], fotos: [], checklistCtx: {} },
-                { id: '6', nome: 'Quarto 2 (Suíte)', comp: 2.56, larg: 2.90, peDireito: null, paredes: [], elementos: [], fotos: [], checklistCtx: {} },
-                { id: '7', nome: 'Sanitário Social', comp: null, larg: null, peDireito: null, paredes: [], elementos: [], fotos: [], checklistCtx: {} },
-                { id: '8', nome: 'Sanitário Suíte', comp: 2.22, larg: 1.69, peDireito: null, paredes: [], elementos: [], fotos: [], checklistCtx: {} }
-            ];
-            const checkItens = [
-                "Confirmar acesso a todos os ambientes", "Verificar se planta corresponde à unidade",
-                "Medir comprimento e largura de todos os ambientes", "Medir pé-direito",
-                "Registrar pontos elétricos (tomadas)", "Registrar pontos hidráulicos (água/esgoto)",
-                "Registrar medidas de janelas e portas", "Fotografar todas as paredes"
-            ];
-            this.data.checklist = checkItens.map((item, index) => ({ id: `chk_${index}`, texto: item, status: 'pendente', observacao: '' }));
-            this.data.plantaPins = [];
-            this.data.divergencias = [];
-            this.data.marcenaria = [];
-            this.data.vistoria = { preparacao: {}, ambientes: {}, obsGeral: {} };
-            this.saveLocal();
-        }
-    },
-    async syncToFirebase() {
-        if (!navigator.onLine) return;
-        this.updateSaveStatus('Sincronizando...', 'syncing');
-        try {
-            const dataToSync = JSON.parse(JSON.stringify(this.data));
-            dataToSync.ambientes.forEach(a => a.fotos = []);
-            dataToSync.plantaImagem = null;
-            dataToSync.divergencias.forEach(d => d.foto = null);
-            await setDoc(doc(db, "projetos", this.data.projeto.id), dataToSync, { merge: true });
-            this._unsynced = false;
-            const dot = document.getElementById('unsync-dot');
-            if (dot) dot.classList.remove('active');
-            this.updateSaveStatus('Sincronizado', 'saved');
-        } catch (e) {
-            console.error("Erro ao sincronizar:", e);
-            this.updateSaveStatus('Erro nuvem (Salvo local)', 'unsynced');
-        }
-    },
-    updateSaveStatus(text, className) {
-        const el = document.getElementById('save-status');
-        if (el) { el.textContent = text; el.className = `status-badge ${className}`; }
-    },
-
-    // ========== NAVEGAÇÃO ==========
-    navigate(viewName) {
-        document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
-        const view = document.getElementById(`view-${viewName}`);
-        if (view) view.classList.add('active');
-        document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active'));
-        const navBtn = Array.from(document.querySelectorAll('.nav-btn')).find(b => b.getAttribute('data-tab') === viewName);
-        if (navBtn) navBtn.classList.add('active');
-
-        if (viewName === 'ambientes') this.renderAmbientes();
-        if (viewName === 'checklist') this.renderChecklist();
-        if (viewName === 'dashboard') this.renderDashboard();
-        if (viewName === 'planta') this.renderPlanta();
-        if (viewName === 'relatorio') this.renderRelatorio();
-        if (viewName === 'divergencias') this.renderDivergenciasPage();
-        if (viewName === 'marcenaria') this.renderMarcenariaPage();
-        if (viewName === 'vistoria') this.renderVistoriaPage();
-    },
-    switchTab(tabId, event) {
-        this.currentTab = tabId;
-        document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-        document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
-        const tab = document.getElementById(tabId);
-        if (tab) tab.classList.add('active');
-        if (event && event.target) event.target.classList.add('active');
-        if (tabId === 'tab-checklist-ctx') this.renderChecklistContextual();
-        this.haptic('light');
-    },
-    switchTabProgrammatic(tabId) {
-        document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-        document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
-        const tab = document.getElementById(tabId);
-        if (tab) tab.classList.add('active');
-        const btn = document.querySelector(`.tab-btn[onclick*="${tabId}"]`);
-        if (btn) btn.classList.add('active');
-    },
-
-    // ========== RENDER ==========
-    renderAll() {
-        this.renderDashboard();
-        this.renderAmbientes();
-        this.renderChecklist();
-        const dateEl = document.getElementById('dash-date');
-        if (dateEl) dateEl.textContent = this.data.projeto.dataVisita;
-    },
-    renderDashboard() {
-        let totalItens = 0, medidos = 0, totalParedes = 0;
-        this.data.ambientes.forEach(amb => {
-            totalItens += 3;
-            if (amb.comp) medidos++;
-            if (amb.larg) medidos++;
-            if (amb.peDireito) medidos++;
-            totalParedes += (amb.paredes?.length || 0);
-        });
-        this.data.checklist.forEach(chk => {
-            totalItens++;
-            if (chk.status === 'medido' || chk.status === 'conferido' || chk.status === 'na') medidos++;
-        });
-        const percent = totalItens === 0 ? 0 : Math.round((medidos / totalItens) * 100);
-        const bar = document.getElementById('dash-progress-bar');
-        const text = document.getElementById('dash-progress-text');
-        if (bar) bar.style.width = `${percent}%`;
-        if (text) text.textContent = `${percent}% concluído`;
-        const md = document.getElementById('dash-medidos');
-        const pd = document.getElementById('dash-pendentes');
-        const pr = document.getElementById('dash-paredes');
-        if (md) md.textContent = medidos;
-        if (pd) pd.textContent = totalItens - medidos;
-        if (pr) pr.textContent = totalParedes;
-
-        const abertas = this.data.divergencias.filter(d => d.status === 'aberta').length;
-        const analise = this.data.divergencias.filter(d => d.status === 'analise').length;
-        const resolvidas = this.data.divergencias.filter(d => d.status === 'resolvida' || d.status === 'aceita').length;
-        const ea = document.getElementById('dash-div-abertas');
-        const ean = document.getElementById('dash-div-analise');
-        const er = document.getElementById('dash-div-resolvidas');
-        if (ea) ea.textContent = abertas;
-        if (ean) ean.textContent = analise;
-        if (er) er.textContent = resolvidas;
-
-        const grid = document.getElementById('dash-amb-grid');
-        if (grid) {
-            grid.innerHTML = '';
-            this.data.ambientes.forEach(amb => {
-                const status = this.ambStatus(amb);
-                const mini = document.createElement('div');
-                mini.className = `amb-mini-card status-${status}`;
-                mini.onclick = () => this.openAmbiente(amb.id);
-                mini.innerHTML = `
-                    <div class="mini-nome">${amb.nome}</div>
-                    <div class="mini-sub">${amb.comp && amb.larg ? (amb.comp * amb.larg).toFixed(1) + ' m²' : 'Sem medidas'}</div>
-                `;
-                grid.appendChild(mini);
-            });
-        }
-        
-        // Stats de vistoria
-let vistOk = 0, vistDefeito = 0, vistPendente = 0;
-const VIST_CHECKLIST = this.getChecklistVistoria();
-Object.keys(VIST_CHECKLIST).forEach(tipo => {
-    VIST_CHECKLIST[tipo].sections.forEach(sec => {
-        sec.itens.forEach((item, idx) => {
-            const key = `${tipo}:${sec.titulo}:${idx}`;
-            const st = (this.data.vistoria.ambientes || {})[key]?.status;
-            if (st === 'ok') vistOk++;
-            else if (st === 'defeito') vistDefeito++;
-            else vistPendente++;
-        });
-    });
-});
-const elOk = document.getElementById('dash-vist-ok');
-const elDef = document.getElementById('dash-vist-defeito');
-const elPend = document.getElementById('dash-vist-pendente');
-if (elOk) elOk.textContent = vistOk;
-if (elDef) elDef.textContent = vistDefeito;
-if (elPend) elPend.textContent = vistPendente;
-    },
-    ambStatus(amb) {
-        const hasDim = !!(amb.comp && amb.larg && amb.peDireito);
-        const hasParedes = (amb.paredes?.length || 0) > 0;
-        if (hasDim && hasParedes) return 'verde';
-        if (hasDim || hasParedes) return 'amarelo';
-        return 'vermelho';
-    },
-    renderAmbientes() {
-        const container = document.getElementById('ambientes-list');
-        if (!container) return;
-        const searchEl = document.getElementById('amb-search');
-        const search = searchEl ? searchEl.value.toLowerCase().trim() : '';
-        container.innerHTML = '';
-        const filtered = this.data.ambientes.filter(a => !search || a.nome.toLowerCase().includes(search));
-        if (filtered.length === 0) {
-            container.innerHTML = '<p class="empty-msg">Nenhum ambiente encontrado.</p>';
-            return;
-        }
-        filtered.forEach(amb => {
-            const area = (amb.comp && amb.larg) ? (amb.comp * amb.larg).toFixed(2) : '?';
-            const status = this.ambStatus(amb);
-            const div = document.createElement('div');
-            div.className = 'list-item';
-            div.style.borderLeft = `4px solid var(--${status === 'verde' ? 'success' : status === 'amarelo' ? 'warning' : 'danger'})`;
-            div.innerHTML = `
-                <div class="list-item-header">
-                    <strong>${amb.nome}</strong>
-                    <span class="badge">${area} m²</span>
-                </div>
-                <div class="list-item-details">
-                    ${amb.comp || '?'} x ${amb.larg || '?'} m • ${amb.paredes?.length || 0} paredes • ${amb.elementos?.length || 0} elementos
-                </div>
-                <button class="btn btn-secondary mt-2" onclick="app.openAmbiente('${amb.id}')">Abrir Ficha</button>
-            `;
-            container.appendChild(div);
-        });
-    },
-    renderChecklist() {
-        const container = document.getElementById('checklist-items');
-        if (!container) return;
-        const filterEl = document.getElementById('filter-status');
-        const filter = filterEl ? filterEl.value : 'all';
-        container.innerHTML = '';
-        this.data.checklist.forEach(chk => {
-            if (filter !== 'all' && chk.status !== filter) return;
-            const div = document.createElement('div');
-            div.className = 'list-item';
-            div.innerHTML = `
-                <div class="list-item-header">
-                    <span>${chk.texto}</span>
-                    <select onchange="app.updateChecklist('${chk.id}', this.value)" class="status-select">
-                        <option value="pendente" ${chk.status === 'pendente' ? 'selected' : ''}>Pendente</option>
-                        <option value="medido" ${chk.status === 'medido' ? 'selected' : ''}>Medido</option>
-                        <option value="conferido" ${chk.status === 'conferido' ? 'selected' : ''}>Conferido</option>
-                        <option value="na" ${chk.status === 'na' ? 'selected' : ''}>N/A</option>
-                    </select>
-                </div>
-            `;
-            container.appendChild(div);
-        });
-    },
-
-    // ========== AMBIENTE ==========
-    openAmbiente(id) {
-        this.haptic('light');
-        this.currentAmbienteId = id;
-        const amb = this.data.ambientes.find(a => a.id === id);
-        if (!amb) return;
-        const nomeEl = document.getElementById('amb-nome');
-        if (nomeEl) nomeEl.textContent = amb.nome;
-        const compEl = document.getElementById('amb-comprimento');
-        const largEl = document.getElementById('amb-largura');
-        const peEl = document.getElementById('amb-pe-direito');
-        if (compEl) compEl.value = amb.comp || '';
-        if (largEl) largEl.value = amb.larg || '';
-        if (peEl) peEl.value = amb.peDireito || '';
-        this.calcArea(amb);
-        this.renderFotos(amb);
-        this.renderParedes(amb);
-        this.renderElementos(amb);
-        this.populateParedeSelect(amb);
-        this.navigate('ambiente-detalhe');
-        this.switchTabProgrammatic('tab-geral');
-    },
-    addAmbiente() {
-        const nome = prompt("Nome do novo ambiente:", "Novo Ambiente");
-        if (!nome) return;
-        this.data.ambientes.push({
-            id: Date.now().toString(), nome,
-            comp: null, larg: null, peDireito: null,
-            paredes: [], elementos: [], fotos: [], checklistCtx: {}
-        });
-        this.saveLocal(); this.syncToFirebase();
-        this.renderAmbientes(); this.renderDashboard();
-        this.showToast("Ambiente adicionado", 'success');
-        this.haptic('medium');
-    },
-    saveAmbienteDimensoes() {
-        const amb = this.data.ambientes.find(a => a.id === this.currentAmbienteId);
-        if (!amb) return;
-        amb.comp = parseFloat(document.getElementById('amb-comprimento').value) || null;
-        amb.larg = parseFloat(document.getElementById('amb-largura').value) || null;
-        amb.peDireito = parseFloat(document.getElementById('amb-pe-direito').value) || null;
-        this.calcArea(amb);
-        this.saveLocal(); this.syncToFirebase();
-        this.haptic('light');
-    },
-    calcArea(amb) {
-        const el = document.getElementById('amb-area-calc');
-        if (!el) return;
-        if (amb.comp && amb.larg) el.textContent = `${(amb.comp * amb.larg).toFixed(2)} m²`;
-        else el.textContent = '-- m²';
-    },
-
-    // ========== PAREDES ==========
-    addParede() {
-        const nomeEl = document.getElementById('parede-nome');
-        const compEl = document.getElementById('parede-comp');
-        const altEl = document.getElementById('parede-alt');
-        if (!nomeEl || !compEl || !altEl) return;
-        const nome = nomeEl.value.trim();
-        const comp = parseFloat(compEl.value);
-        const alt = parseFloat(altEl.value);
-        if (!nome || !comp || !alt) return this.showToast("Preencha nome, comprimento e altura.", 'warning');
-        const amb = this.data.ambientes.find(a => a.id === this.currentAmbienteId);
-        if (!amb) return;
-        if (!amb.paredes) amb.paredes = [];
-        amb.paredes.push({ id: Date.now().toString(), nome, comp, alt });
-        nomeEl.value = ''; compEl.value = ''; altEl.value = '';
-        this.saveLocal(); this.syncToFirebase();
-        this.renderParedes(amb); this.populateParedeSelect(amb);
-        this.showToast("Parede adicionada", 'success');
-        this.haptic('medium');
-    },
-    renderParedes(amb) {
-        const container = document.getElementById('paredes-list');
-        if (!container) return;
-        container.innerHTML = '';
-        if (!amb.paredes || amb.paredes.length === 0) {
-            container.innerHTML = '<p class="empty-msg">Nenhuma parede cadastrada.</p>';
-            return;
-        }
-        amb.paredes.forEach(p => {
-            const areaBruta = (p.comp * p.alt).toFixed(2);
-            const elementosParede = (amb.elementos || []).filter(e => e.paredeId === p.id);
-            let areaVaos = 0;
-            elementosParede.forEach(e => { if (e.larg && e.alt) areaVaos += (e.larg * e.alt); });
-            const areaLiquida = (areaBruta - areaVaos).toFixed(2);
-            const div = document.createElement('div');
-            div.className = 'list-item';
-            div.innerHTML = `
-                <div class="list-item-header">
-                    <strong>${p.nome}</strong>
-                    <button class="btn-icon-danger" onclick="app.removeParede('${p.id}')">Excluir</button>
-                </div>
-                <div class="list-item-details">
-                    ${p.comp}m x ${p.alt}m • Área Bruta: ${areaBruta} m²<br>
-                    Vãos: ${areaVaos.toFixed(2)} m² • <strong>Área Líquida: ${areaLiquida} m²</strong>
-                </div>
-            `;
-            container.appendChild(div);
-        });
-    },
-    removeParede(id) {
-        if (!confirm("Excluir esta parede? Elementos associados também serão removidos.")) return;
-        const amb = this.data.ambientes.find(a => a.id === this.currentAmbienteId);
-        if (!amb) return;
-        amb.paredes = amb.paredes.filter(p => p.id !== id);
-        amb.elementos = (amb.elementos || []).filter(e => e.paredeId !== id);
-        this.saveLocal(); this.syncToFirebase();
-        this.renderParedes(amb); this.renderElementos(amb); this.populateParedeSelect(amb);
-        this.showToast("Parede removida", 'warning');
-        this.haptic('medium');
-    },
-
-    // ========== ELEMENTOS ==========
-    populateParedeSelect(amb) {
-        const select = document.getElementById('elem-parede-select');
-        if (!select) return;
-        select.innerHTML = '<option value="">Selecione uma parede...</option>';
-        (amb.paredes || []).forEach(p => { select.innerHTML += `<option value="${p.id}">${p.nome}</option>`; });
-    },
-    addElemento() {
-        const paredeId = document.getElementById('elem-parede-select')?.value;
-        const tipo = document.getElementById('elem-tipo')?.value;
-        const larg = parseFloat(document.getElementById('elem-larg')?.value) || null;
-        const alt = parseFloat(document.getElementById('elem-alt')?.value) || null;
-        const peitoril = parseFloat(document.getElementById('elem-peitoril')?.value) || null;
-        if (!paredeId) return this.showToast("Selecione a parede.", 'warning');
-        const amb = this.data.ambientes.find(a => a.id === this.currentAmbienteId);
-        if (!amb) return;
-        if (!amb.elementos) amb.elementos = [];
-        amb.elementos.push({ id: Date.now().toString(), paredeId, tipo, larg, alt, peitoril });
-        const lg = document.getElementById('elem-larg'); if (lg) lg.value = '';
-        const at = document.getElementById('elem-alt'); if (at) at.value = '';
-        const pe = document.getElementById('elem-peitoril'); if (pe) pe.value = '';
-        this.saveLocal(); this.syncToFirebase();
-        this.renderElementos(amb); this.renderParedes(amb);
-        this.showToast("Elemento adicionado", 'success');
-        this.haptic('medium');
-    },
-    renderElementos(amb) {
-        const container = document.getElementById('elementos-list');
-        if (!container) return;
-        container.innerHTML = '';
-        if (!amb.elementos || amb.elementos.length === 0) {
-            container.innerHTML = '<p class="empty-msg">Nenhum elemento cadastrado.</p>';
-            return;
-        }
-        const tiposFormatados = {
-            janela: '🪟 Janela', porta: '🚪 Porta', tomada: '🔌 Tomada',
-            interruptor: '💡 Interruptor', ponto_hidraulico: '🚰 Hidráulica',
-            ponto_gas: '🔥 Gás', ar_condicionado: '❄️ Ar-Cond.'
-        };
-        amb.elementos.forEach(e => {
-            const parede = amb.paredes.find(p => p.id === e.paredeId);
-            const div = document.createElement('div');
-            div.className = 'list-item';
-            div.innerHTML = `
-                <div class="list-item-header">
-                    <strong>${tiposFormatados[e.tipo] || e.tipo}</strong>
-                    <button class="btn-icon-danger" onclick="app.removeElemento('${e.id}')">Excluir</button>
-                </div>
-                <div class="list-item-details">
-                    Parede: ${parede ? parede.nome : '—'}<br>
-                    ${e.larg ? `Larg: ${e.larg}m ` : ''}${e.alt ? `Alt: ${e.alt}m ` : ''}${e.peitoril ? `Peitoril: ${e.peitoril}m` : ''}
-                </div>
-            `;
-            container.appendChild(div);
-        });
-    },
-    removeElemento(id) {
-        if (!confirm("Excluir este elemento?")) return;
-        const amb = this.data.ambientes.find(a => a.id === this.currentAmbienteId);
-        if (!amb) return;
-        amb.elementos = amb.elementos.filter(e => e.id !== id);
-        this.saveLocal(); this.syncToFirebase();
-        this.renderElementos(amb); this.renderParedes(amb);
-        this.showToast("Elemento removido", 'warning');
-        this.haptic('medium');
-    },
-
-    // ========== FOTOS ==========
-    async handlePhotoUpload(event) {
-        const file = event.target.files[0];
-        if (!file) return;
-        const compressed = await this.compressImage(file, 800, 0.7);
-        const amb = this.data.ambientes.find(a => a.id === this.currentAmbienteId);
-        if (!amb) return;
-        if (!amb.fotos) amb.fotos = [];
-        amb.fotos.push(compressed);
-        this.saveLocal(); this.syncToFirebase();
-        this.renderFotos(amb);
-        event.target.value = '';
-        this.showToast("Foto adicionada", 'success');
-        this.haptic('medium');
-    },
-    compressImage(file, maxWidth, quality) {
-        return new Promise((resolve) => {
-            const reader = new FileReader();
-            reader.readAsDataURL(file);
-            reader.onload = (event) => {
-                const img = new Image();
-                img.src = event.target.result;
-                img.onload = () => {
-                    const canvas = document.createElement('canvas');
-                    const scaleSize = maxWidth / img.width;
-                    canvas.width = maxWidth;
-                    canvas.height = img.height * scaleSize;
-                    canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-                    resolve(canvas.toDataURL('image/jpeg', quality));
-                };
-            };
-        });
-    },
-    renderFotos(amb) {
-        const container = document.getElementById('fotos-gallery');
-        if (!container) return;
-        container.innerHTML = '';
-        (amb.fotos || []).forEach(foto => {
-            const img = document.createElement('img');
-            img.src = foto;
-            container.appendChild(img);
-        });
-    },
-    updateChecklist(id, newStatus) {
-        const item = this.data.checklist.find(c => c.id === id);
-        if (item) {
-            item.status = newStatus;
-            this.saveLocal(); this.syncToFirebase();
-            this.renderDashboard();
-            this.haptic('light');
-        }
-    },
-    exportBackup() {
-        const dataStr = JSON.stringify(this.data, null, 2);
-        const blob = new Blob([dataStr], { type: "application/json" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `backup_vistoria_${this.data.projeto.id}.json`;
-        a.click();
-        URL.revokeObjectURL(url);
-        this.showToast("Backup exportado", 'success');
-        this.haptic('medium');
-    },
-
-    // ========== CHECKLIST CONTEXTUAL ==========
-    renderChecklistContextual() {
-        const container = document.getElementById('ctx-checklist-container');
-        if (!container) return;
-        const amb = this.data.ambientes.find(a => a.id === this.currentAmbienteId);
-        if (!amb) { container.innerHTML = '<p class="empty-msg">Nenhum ambiente aberto.</p>'; return; }
-        
-        const tipo = detectTipoAmbiente(amb.nome);
-        const config = CHECKLISTS_CONTEXTUAIS[tipo];
-        if (!amb.checklistCtx) amb.checklistCtx = {};
-        const ctx = amb.checklistCtx;
-
-        let html = `<div class="card">
-            <h3>${config.label}</h3>
-            <p class="hint-text">Checklist específico para este tipo de ambiente. Marque o status de cada item.</p>
-        </div>`;
-
-        config.sections.forEach(sec => {
-            html += `<div class="ctx-section-title">${sec.titulo}</div>`;
-            sec.itens.forEach((item, idx) => {
-                const key = `${tipo}:${sec.titulo}:${idx}`;
-                const status = ctx[key] || 'pendente';
-                html += `
-                    <div class="ctx-item">
-                        <span class="ctx-label">${item}</span>
-                        <select onchange="app.updateChecklistCtx('${key}', this.value)">
-                            <option value="pendente" ${status === 'pendente' ? 'selected' : ''}>Pendente</option>
-                            <option value="ok" ${status === 'ok' ? 'selected' : ''}>OK</option>
-                            <option value="medido" ${status === 'medido' ? 'selected' : ''}>Medido</option>
-                            <option value="na" ${status === 'na' ? 'selected' : ''}>N/A</option>
-                        </select>
-                    </div>
-                `;
-            });
-        });
-
-        container.innerHTML = html;
-    },
-    updateChecklistCtx(key, value) {
-        const amb = this.data.ambientes.find(a => a.id === this.currentAmbienteId);
-        if (!amb) return;
-        if (!amb.checklistCtx) amb.checklistCtx = {};
-        amb.checklistCtx[key] = value;
-        this.saveLocal(); this.syncToFirebase();
-        this.haptic('light');
-    },
-
-    // ========== MARCENARIA ==========
-    renderMarcenariaPage() {
-        const select = document.getElementById('marc-ambiente');
-        if (select) {
-            select.innerHTML = '<option value="">— Selecione —</option>';
-            this.data.ambientes.forEach(a => { select.innerHTML += `<option value="${a.id}">${a.nome}</option>`; });
-        }
-        this.renderMarcenaria();
-    },
-
-    marcSalvar() {
-        const ambId = document.getElementById('marc-ambiente').value;
-        const nome = document.getElementById('marc-nome').value.trim();
-        const largura = parseFloat(document.getElementById('marc-largura').value) || null;
-        const profundidade = parseFloat(document.getElementById('marc-profundidade').value) || null;
-        const altura = parseFloat(document.getElementById('marc-altura').value) || null;
-        const folga = parseFloat(document.getElementById('marc-folga').value) || 5;
-        const modelo = document.getElementById('marc-modelo').value.trim();
-        const obs = document.getElementById('marc-obs').value.trim();
-        
-        if (!ambId) return this.showToast("Selecione o ambiente.", 'warning');
-        if (!nome) return this.showToast("Informe o nome do móvel.", 'warning');
-        if (!largura || !profundidade) return this.showToast("Informe largura e profundidade.", 'warning');
-
-        if (!this.data.marcenaria) this.data.marcenaria = [];
-        this.data.marcenaria.push({
-            id: Date.now().toString(),
-            ambienteId: ambId,
-            nome, largura, profundidade, altura: altura || null,
-            folga, modelo, obs,
-            dataRegistro: new Date().toISOString().split('T')[0]
-        });
-        this.saveLocal(); this.syncToFirebase();
-        
-        ['marc-nome','marc-largura','marc-profundidade','marc-altura','marc-modelo','marc-obs'].forEach(id => {
-            const el = document.getElementById(id);
-            if (el) el.value = '';
-        });
-        this.renderMarcenaria();
-        this.showToast("Móvel adicionado", 'success');
-        this.haptic('medium');
-    },
-
-    // Avalia se o móvel cabe no ambiente
-    marcAvaliar(item) {
-        const amb = this.data.ambientes.find(a => a.id === item.ambienteId);
-        if (!amb) return { status: 'sem-medida', msg: 'Ambiente não encontrado.' };
-        if (!amb.comp || !amb.larg) return { status: 'sem-medida', msg: 'O ambiente ainda não tem medidas registradas. Meça antes de avaliar.' };
-
-        const folgaM = (item.folga || 5) / 100;
-        const compDisp = Math.max(amb.comp, amb.larg);
-        const largDisp = Math.min(amb.comp, amb.larg);
-        const altDisp = amb.peDireito || null;
-
-        const largNecessaria = item.largura + folgaM;
-        const profNecessaria = item.profundidade + folgaM;
-
-        const cabeLarg = largNecessaria <= largDisp;
-        const cabeProf = profNecessaria <= compDisp;
-        const cabeAlt = item.altura && altDisp ? item.altura <= altDisp : true;
-
-        if (cabeLarg && cabeProf && cabeAlt) {
-            return { status: 'cabe', msg: `✓ Parece caber. Largura disponível: ${largDisp.toFixed(2)} m (necessário ${largNecessaria.toFixed(2)} m). Profundidade disponível: ${compDisp.toFixed(2)} m (necessário ${profNecessaria.toFixed(2)} m).${altDisp ? ` Pé-direito: ${altDisp.toFixed(2)} m.` : ''} Confirme circulação e abertura de portas/gavetas.` };
-        }
-        if (!cabeLarg && !cabeProf) {
-            return { status: 'nao-cabe', msg: `✗ Não cabe. Você precisa de ${largNecessaria.toFixed(2)} m x ${profNecessaria.toFixed(2)} m. Este ambiente tem ${largDisp.toFixed(2)} m x ${compDisp.toFixed(2)} m úteis (com folga de ${item.folga} cm).` };
-        }
-        return { status: 'apertado', msg: `⚠ Apertado. ${!cabeLarg ? 'Falta largura. ' : ''}${!cabeProf ? 'Falta profundidade. ' : ''}${!cabeAlt ? 'Altura do móvel excede o pé-direito. ' : ''}Reveja o projeto ou escolha um modelo menor.` };
-    },
-
-    renderMarcenaria() {
-        const container = document.getElementById('marc-list');
-        const totalEl = document.getElementById('marc-total');
-        if (!container) return;
-        if (!this.data.marcenaria) this.data.marcenaria = [];
-        if (totalEl) totalEl.textContent = this.data.marcenaria.length;
-
-        if (this.data.marcenaria.length === 0) {
-            container.innerHTML = '<p class="empty-msg">Nenhum móvel cadastrado ainda.</p>';
-            return;
-        }
-
-        container.innerHTML = '';
-        // Ordena por ambiente
-        const sorted = this.data.marcenaria.slice().sort((a, b) => {
-            const na = this.data.ambientes.find(x => x.id === a.ambienteId)?.nome || '';
-            const nb = this.data.ambientes.find(x => x.id === b.ambienteId)?.nome || '';
-            return na.localeCompare(nb);
-        });
-
-        let lastAmb = null;
-        sorted.forEach(item => {
-            const amb = this.data.ambientes.find(a => a.id === item.ambienteId);
-            const ambNome = amb ? amb.nome : '—';
-            const av = this.marcAvaliar(item);
-
-            if (ambNome !== lastAmb) {
-                const t = document.createElement('div');
-                t.className = 'ctx-section-title';
-                t.textContent = ambNome;
-                container.appendChild(t);
-                lastAmb = ambNome;
-            }
-
-            const badgeLabel = { cabe: 'Cabe', apertado: 'Apertado', 'nao-cabe': 'Não Cabe', 'sem-medida': 'Sem Medida' }[av.status];
-            const alertaClass = { cabe: 'ok', apertado: 'atencao', 'nao-cabe': 'erro', 'sem-medida': '' }[av.status];
-
-            const card = document.createElement('div');
-            card.className = `list-item marc-card status-${av.status === 'nao-cabe' ? 'nao-cabe' : av.status === 'apertado' ? 'apertado' : av.status === 'cabe' ? 'cabe' : 'sem-medida'}`;
-            card.innerHTML = `
-                <div class="marc-header">
-                    <div>
-                        <div class="marc-nome">${item.nome}</div>
-                        ${item.modelo ? `<div class="marc-sub">${item.modelo}</div>` : ''}
-                    </div>
-                    <span class="marc-badge ${av.status}">${badgeLabel}</span>
-                </div>
-                <div class="marc-dims">
-                    <span>Larg: <strong>${item.largura} m</strong></span>
-                    <span>Prof: <strong>${item.profundidade} m</strong></span>
-                    ${item.altura ? `<span>Alt: <strong>${item.altura} m</strong></span>` : ''}
-                    <span>Folga: <strong>${item.folga} cm</strong></span>
-                </div>
-                ${item.obs ? `<div class="list-item-details">${item.obs}</div>` : ''}
-                ${alertaClass ? `<div class="marc-alerta ${alertaClass}">${av.msg}</div>` : ''}
-                <div class="marc-actions">
-                    <button class="btn-delete" onclick="app.marcExcluir('${item.id}')">Excluir</button>
-                </div>
-            `;
-            container.appendChild(card);
-        });
-    },
-
-    marcExcluir(id) {
-        if (!confirm("Excluir este item?")) return;
-        this.data.marcenaria = this.data.marcenaria.filter(m => m.id !== id);
-        this.saveLocal(); this.syncToFirebase();
-        this.renderMarcenaria();
-        this.showToast("Item removido", 'warning');
-        this.haptic('medium');
-    },
-
-    // ========== DIVERGÊNCIAS ==========
-    renderDivergenciasPage() {
-        const ambSelect = document.getElementById('div-ambiente');
-        const filterAmb = document.getElementById('div-filter-ambiente');
-        if (ambSelect) {
-            ambSelect.innerHTML = '<option value="">— Selecione —</option>';
-            this.data.ambientes.forEach(a => { ambSelect.innerHTML += `<option value="${a.id}">${a.nome}</option>`; });
-        }
-        if (filterAmb) {
-            const currentVal = filterAmb.value;
-            filterAmb.innerHTML = '<option value="all">Todos os ambientes</option>';
-            this.data.ambientes.forEach(a => { filterAmb.innerHTML += `<option value="${a.id}">${a.nome}</option>`; });
-            filterAmb.value = currentVal || 'all';
-        }
-        this.div.fotoTemp = null;
-        const preview = document.getElementById('div-foto-preview');
-        if (preview) preview.innerHTML = '';
-        const outroGroup = document.getElementById('div-elemento-outro-group');
-        if (outroGroup) outroGroup.style.display = 'none';
-        const calcBox = document.getElementById('div-calculo-box');
-        if (calcBox) calcBox.style.display = 'none';
-        this.renderDivergencias();
-    },
-    divLoadElementos() {
-        const ambId = document.getElementById('div-ambiente').value;
-        const select = document.getElementById('div-elemento');
-        if (!select) return;
-        select.innerHTML = '<option value="">— Selecione —</option>';
-        if (!ambId) return;
-        const amb = this.data.ambientes.find(a => a.id === ambId);
-        if (!amb) return;
-        (amb.paredes || []).forEach(p => { select.innerHTML += `<option value="parede:${p.id}">🧱 ${p.nome}</option>`; });
-        const tiposLabel = { janela: '🪟 Janela', porta: '🚪 Porta', tomada: '🔌 Tomada', interruptor: '💡 Interruptor', ponto_hidraulico: '🚰 Hidráulica', ponto_gas: '🔥 Gás', ar_condicionado: '❄️ Ar-Cond.' };
-        (amb.elementos || []).forEach((e, idx) => { select.innerHTML += `<option value="elem:${e.id}">${tiposLabel[e.tipo] || e.tipo} #${idx+1}</option>`; });
-        select.innerHTML += `<option value="__outro__">✏️ Outro (digitar)</option>`;
-    },
-    divToggleElementoOutro() {
-        const val = document.getElementById('div-elemento').value;
-        const group = document.getElementById('div-elemento-outro-group');
-        if (group) group.style.display = (val === '__outro__') ? 'block' : 'none';
-    },
-    divCalcular() {
-        const planta = parseFloat(document.getElementById('div-medida-planta').value);
-        const real = parseFloat(document.getElementById('div-medida-real').value);
-        const box = document.getElementById('div-calculo-box');
-        const difEl = document.getElementById('div-calculo-dif');
-        const pctEl = document.getElementById('div-calculo-pct');
-        if (!box || !difEl || !pctEl) return;
-        if (isNaN(planta) || isNaN(real) || planta === 0) { box.style.display = 'none'; return; }
-        box.style.display = 'flex';
-        const dif = real - planta;
-        const pct = (dif / planta) * 100;
-        const sinal = dif > 0 ? '+' : '';
-        difEl.textContent = `${sinal}${dif.toFixed(3)} m`;
-        difEl.style.color = dif === 0 ? 'var(--success)' : 'var(--danger)';
-        pctEl.textContent = `${sinal}${pct.toFixed(2)}%`;
-        pctEl.style.color = dif === 0 ? 'var(--success)' : 'var(--danger)';
-    },
-    async divFotoUpload(event) {
-        const file = event.target.files[0];
-        if (!file) return;
-        const compressed = await this.compressImage(file, 800, 0.7);
-        this.div.fotoTemp = compressed;
-        const preview = document.getElementById('div-foto-preview');
-        if (preview) preview.innerHTML = `<img src="${compressed}" alt="Foto da divergência">`;
-        event.target.value = '';
-    },
-    divSalvar() {
-        const ambId = document.getElementById('div-ambiente').value;
-        if (!ambId) return this.showToast("Selecione o ambiente.", 'warning');
-        const amb = this.data.ambientes.find(a => a.id === ambId);
-        if (!amb) return;
-        const elemVal = document.getElementById('div-elemento').value;
-        let elementoNome = '';
-        if (elemVal === '__outro__') {
-            elementoNome = document.getElementById('div-elemento-outro').value.trim();
-            if (!elementoNome) return this.showToast("Descreva o elemento.", 'warning');
-        } else if (elemVal.startsWith('parede:')) {
-            const pId = elemVal.split(':')[1];
-            const p = amb.paredes.find(x => x.id === pId);
-            elementoNome = p ? `Parede: ${p.nome}` : 'Parede';
-        } else if (elemVal.startsWith('elem:')) {
-            const eId = elemVal.split(':')[1];
-            const e = amb.elementos.find(x => x.id === eId);
-            const tiposLabel = { janela: 'Janela', porta: 'Porta', tomada: 'Tomada', interruptor: 'Interruptor', ponto_hidraulico: 'Hidráulica', ponto_gas: 'Gás', ar_condicionado: 'Ar-Cond.' };
-            elementoNome = e ? (tiposLabel[e.tipo] || e.tipo) : 'Elemento';
-        } else {
-            return this.showToast("Selecione o elemento/local.", 'warning');
-        }
-        const planta = parseFloat(document.getElementById('div-medida-planta').value) || null;
-        const real = parseFloat(document.getElementById('div-medida-real').value) || null;
-        const descricao = document.getElementById('div-descricao').value.trim();
-        const pergunta = document.getElementById('div-pergunta').value.trim();
-        const prioridade = document.getElementById('div-prioridade').value;
-        const status = document.getElementById('div-status').value;
-        if (!planta || !real) return this.showToast("Informe a medida na planta e a medida real.", 'warning');
-        let dif = null, pct = null;
-        if (planta && real && planta !== 0) { dif = real - planta; pct = (dif / planta) * 100; }
-        this.data.divergencias.push({
-            id: Date.now().toString(), ambienteId: ambId, ambienteNome: amb.nome, elemento: elementoNome,
-            medidaPlanta: planta, medidaReal: real, diferenca: dif, diferencaPercentual: pct,
-            descricao, pergunta, prioridade, status, foto: this.div.fotoTemp || null,
-            dataRegistro: new Date().toISOString().split('T')[0]
-        });
-        this.saveLocal(); this.syncToFirebase();
-        this.divLimparFormulario();
-        this.renderDivergencias(); this.renderDashboard(); this.updateDivTotal();
-        this.showToast("Divergência registrada", 'success');
-        this.haptic('heavy');
-    },
-    divLimparFormulario() {
-        ['div-elemento-outro', 'div-medida-planta', 'div-medida-real', 'div-descricao', 'div-pergunta'].forEach(id => {
-            const el = document.getElementById(id);
-            if (el) el.value = '';
-        });
-        const sel = document.getElementById('div-elemento'); if (sel) sel.value = '';
-        const outroGroup = document.getElementById('div-elemento-outro-group'); if (outroGroup) outroGroup.style.display = 'none';
-        const calcBox = document.getElementById('div-calculo-box'); if (calcBox) calcBox.style.display = 'none';
-        this.div.fotoTemp = null;
-        const preview = document.getElementById('div-foto-preview'); if (preview) preview.innerHTML = '';
-    },
-    updateDivTotal() {
-        const el = document.getElementById('div-total');
-        if (el) el.textContent = this.data.divergencias.length;
-    },
-    renderDivergencias() {
-        this.updateDivTotal();
-        const container = document.getElementById('divergencias-list');
-        if (!container) return;
-        const filterAmb = document.getElementById('div-filter-ambiente')?.value || 'all';
-        const filterStatus = document.getElementById('div-filter-status')?.value || 'all';
-        let list = this.data.divergencias.slice();
-        if (filterAmb !== 'all') list = list.filter(d => d.ambienteId === filterAmb);
-        if (filterStatus !== 'all') list = list.filter(d => d.status === filterStatus);
-        list.sort((a, b) => b.id.localeCompare(a.id));
-        if (list.length === 0) {
-            container.innerHTML = '<p class="empty-msg">Nenhuma divergência registrada com esses filtros.</p>';
-            return;
-        }
-        container.innerHTML = '';
-        list.forEach(d => {
-            const statusLabel = { aberta: 'Aberta', analise: 'Em análise', resolvida: 'Resolvida', aceita: 'Aceita' };
-            const prioLabel = { baixa: 'Baixa', media: 'Média', alta: 'Alta', critica: 'Crítica' };
-            const dif = d.diferenca !== null ? d.diferenca : 0;
-            const pct = d.diferencaPercentual !== null ? d.diferencaPercentual : 0;
-            const sinal = dif > 0 ? '+' : '';
-            const card = document.createElement('div');
-            card.className = `list-item div-card prioridade-${d.prioridade}`;
-            card.innerHTML = `
-                <div class="div-header">
-                    <div>
-                        <div class="div-title">${d.elemento}</div>
-                        <div class="div-sub">${d.ambienteNome} • Prioridade ${prioLabel[d.prioridade]}</div>
-                    </div>
-                    <span class="div-status-badge status-${d.status}">${statusLabel[d.status]}</span>
-                </div>
-                <div class="div-diff">
-                    <span>Planta: <strong>${d.medidaPlanta.toFixed(2)} m</strong></span>
-                    <span>Real: <strong>${d.medidaReal.toFixed(2)} m</strong></span>
-                    <span class="div-pct">${sinal}${dif.toFixed(3)} m (${sinal}${pct.toFixed(1)}%)</span>
-                </div>
-                ${d.descricao ? `<div class="list-item-details" style="margin-top:6px;"><strong>Descrição:</strong> ${d.descricao}</div>` : ''}
-                ${d.pergunta ? `<div class="list-item-details" style="margin-top:4px;"><strong>Pergunta:</strong> ${d.pergunta}</div>` : ''}
-                ${d.foto ? `<img class="div-foto" src="${d.foto}" alt="Foto">` : ''}
-                <div class="div-actions">
-                    <button class="btn-status" onclick="app.divMudarStatus('${d.id}')">Mudar Status</button>
-                    <button class="btn-delete" onclick="app.divExcluir('${d.id}')">Excluir</button>
-                </div>
-            `;
-            container.appendChild(card);
-        });
-    },
-    divMudarStatus(id) {
-        const d = this.data.divergencias.find(x => x.id === id);
-        if (!d) return;
-        const opts = ['aberta', 'analise', 'resolvida', 'aceita'];
-        d.status = opts[(opts.indexOf(d.status) + 1) % opts.length];
-        this.saveLocal(); this.syncToFirebase();
-        this.renderDivergencias(); this.renderDashboard();
-        this.haptic('medium');
-    },
-    divExcluir(id) {
-        if (!confirm("Excluir esta divergência?")) return;
-        this.data.divergencias = this.data.divergencias.filter(d => d.id !== id);
-        this.saveLocal(); this.syncToFirebase();
-        this.renderDivergencias(); this.renderDashboard();
-        this.showToast("Divergência excluída", 'warning');
-        this.haptic('heavy');
-    },
-
-    // ========== PLANTA ==========
-    renderPlanta() {
-        const empty = document.getElementById('planta-empty');
-        const stage = document.getElementById('planta-stage');
-        const img = document.getElementById('planta-img');
-        if (!empty || !stage || !img) return;
-        if (this.data.plantaImagem) {
-            empty.style.display = 'none';
-            stage.style.display = 'block';
-            if (img.src !== this.data.plantaImagem) img.src = this.data.plantaImagem;
-            this.plantaReset();
-            this.renderPins();
-        } else {
-            empty.style.display = 'flex';
-            stage.style.display = 'none';
-        }
-    },
-    renderPins() {
-        const layer = document.getElementById('planta-pins-layer');
-        if (!layer) return;
-        layer.innerHTML = '';
-        this.data.plantaPins.forEach(pin => {
-            const amb = this.data.ambientes.find(a => a.id === pin.ambienteId);
-            if (!amb) return;
-            const status = this.pinStatus(amb);
-            const div = document.createElement('div');
-            div.className = `planta-pin status-${status}`;
-            div.style.left = `${pin.x}%`;
-            div.style.top = `${pin.y}%`;
-            div.innerHTML = `<span class="pin-label">${amb.nome.substring(0, 10)}</span>`;
-            div.onclick = (e) => { e.stopPropagation(); this.openAmbiente(amb.id); };
-            layer.appendChild(div);
-        });
-    },
-    pinStatus(amb) {
-        const hasDim = !!(amb.comp && amb.larg && amb.peDireito);
-        const hasParedes = (amb.paredes?.length || 0) > 0;
-        if (hasDim && hasParedes) return 'verde';
-        if (hasDim || hasParedes) return 'amarelo';
-        return 'vermelho';
-    },
-    applyTransform() {
-        const stage = document.getElementById('planta-stage');
-        if (!stage) return;
-        stage.style.transform = `translate(${this.planta.tx}px, ${this.planta.ty}px) scale(${this.planta.scale})`;
-    },
-    plantaZoomIn() { this.planta.scale = Math.min(this.planta.scale * 1.3, this.planta.maxScale); this.applyTransform(); },
-    plantaZoomOut() { this.planta.scale = Math.max(this.planta.scale / 1.3, this.planta.minScale); this.applyTransform(); },
-    plantaReset() { this.planta.scale = 1; this.planta.tx = 0; this.planta.ty = 0; this.applyTransform(); },
-    _plantaListenersInstalled: false,
-    installPlantaGestures() {
-        if (this._plantaListenersInstalled) return;
-        const viewer = document.getElementById('planta-viewer');
-        if (!viewer) return;
-        this._plantaListenersInstalled = true;
-        const self = this;
-        viewer.addEventListener('touchstart', (e) => {
-            if (self.planta.mode === 'addpin') return;
-            if (e.touches.length === 1) {
-                self.planta.isPanning = true;
-                self.planta.lastTouchX = e.touches[0].clientX;
-                self.planta.lastTouchY = e.touches[0].clientY;
-            } else if (e.touches.length === 2) {
-                self.planta.isPinching = true;
-                self.planta.isPanning = false;
-                self.planta.lastTouchDist = self._dist(e.touches[0], e.touches[1]);
-            }
-        }, { passive: false });
-        viewer.addEventListener('touchmove', (e) => {
-            if (self.planta.mode === 'addpin') return;
-            e.preventDefault();
-            if (self.planta.isPinching && e.touches.length === 2) {
-                const dist = self._dist(e.touches[0], e.touches[1]);
-                const ratio = dist / self.planta.lastTouchDist;
-                self.planta.scale = Math.min(Math.max(self.planta.scale * ratio, self.planta.minScale), self.planta.maxScale);
-                self.planta.lastTouchDist = dist;
-                self.applyTransform();
-            } else if (self.planta.isPanning && e.touches.length === 1) {
-                const dx = e.touches[0].clientX - self.planta.lastTouchX;
-                const dy = e.touches[0].clientY - self.planta.lastTouchY;
-                self.planta.tx += dx; self.planta.ty += dy;
-                self.planta.lastTouchX = e.touches[0].clientX;
-                self.planta.lastTouchY = e.touches[0].clientY;
-                self.applyTransform();
-            }
-        }, { passive: false });
-        viewer.addEventListener('touchend', (e) => {
-            if (e.touches.length === 0) {
-                self.planta.isPanning = false; self.planta.isPinching = false;
-            } else if (e.touches.length === 1) {
-                self.planta.isPinching = false; self.planta.isPanning = true;
-                self.planta.lastTouchX = e.touches[0].clientX;
-                self.planta.lastTouchY = e.touches[0].clientY;
-            }
-        });
-        viewer.addEventListener('click', (e) => {
-            if (self.planta.mode !== 'addpin') return;
-            const rect = viewer.getBoundingClientRect();
-            const x = (e.clientX - rect.left - self.planta.tx) / self.planta.scale;
-            const y = (e.clientY - rect.top - self.planta.ty) / self.planta.scale;
-            const xPct = (x / rect.width) * 100;
-            const yPct = (y / rect.height) * 100;
-            if (xPct < 0 || xPct > 100 || yPct < 0 || yPct > 100) return;
-            self.openPinModal(xPct, yPct);
-        });
-        viewer.addEventListener('mousedown', (e) => {
-            if (self.planta.mode === 'addpin') return;
-            self.planta.isPanning = true;
-            self.planta.lastTouchX = e.clientX;
-            self.planta.lastTouchY = e.clientY;
-        });
-        viewer.addEventListener('mousemove', (e) => {
-            if (!self.planta.isPanning) return;
-            const dx = e.clientX - self.planta.lastTouchX;
-            const dy = e.clientY - self.planta.lastTouchY;
-            self.planta.tx += dx; self.planta.ty += dy;
-            self.planta.lastTouchX = e.clientX; self.planta.lastTouchY = e.clientY;
-            self.applyTransform();
-        });
-        viewer.addEventListener('mouseup', () => { self.planta.isPanning = false; });
-        viewer.addEventListener('mouseleave', () => { self.planta.isPanning = false; });
-        viewer.addEventListener('wheel', (e) => {
-            if (self.planta.mode === 'addpin') return;
-            e.preventDefault();
-            const ratio = e.deltaY < 0 ? 1.1 : 0.9;
-            self.planta.scale = Math.min(Math.max(self.planta.scale * ratio, self.planta.minScale), self.planta.maxScale);
-            self.applyTransform();
-        }, { passive: false });
-    },
-    _dist(t1, t2) {
-        const dx = t1.clientX - t2.clientX;
-        const dy = t1.clientY - t2.clientY;
-        return Math.sqrt(dx * dx + dy * dy);
-    },
-    async handlePlantaUpload(event) {
-        const file = event.target.files[0];
-        if (!file) return;
-        const compressed = await this.compressImage(file, 2000, 0.8);
-        this.data.plantaImagem = compressed;
-        this.saveLocal();
-        this.installPlantaGestures();
-        this.renderPlanta();
-        event.target.value = '';
-        this.showToast("Planta importada", 'success');
-        this.haptic('medium');
-    },
-    plantaTrocarImagem() {
-        const input = document.getElementById('planta-input');
-        if (input) input.click();
-    },
-    plantaStartAddPin() {
-        if (!this.data.plantaImagem) return this.showToast("Importe a planta primeiro.", 'warning');
-        this.planta.mode = 'addpin';
-        const hint = document.getElementById('planta-hint');
-        if (hint) hint.classList.add('active');
-        this.haptic('light');
-    },
-    plantaCancelPin() {
-        this.planta.mode = 'view';
-        const hint = document.getElementById('planta-hint');
-        if (hint) hint.classList.remove('active');
-    },
-    plantaLimparPins() {
-        if (!confirm("Remover todos os pins da planta? (Os ambientes não serão apagados)")) return;
-        this.data.plantaPins = [];
-        this.saveLocal(); this.syncToFirebase();
-        this.renderPins();
-        this.showToast("Pins removidos", 'warning');
-        this.haptic('heavy');
-    },
-    openPinModal(xPct, yPct) {
-        this.planta.pendingPin = { x: xPct, y: yPct };
-        this.plantaCancelPin();
-        let modal = document.getElementById('pin-modal');
-        if (!modal) {
-            modal = document.createElement('div');
-            modal.id = 'pin-modal';
-            modal.className = 'pin-modal-overlay';
-            document.body.appendChild(modal);
-        }
-        const options = this.data.ambientes.map(a => `<option value="${a.id}">${a.nome}</option>`).join('');
-        modal.innerHTML = `
-            <div class="pin-modal">
-                <h3>📍 Associar Pin a um Ambiente</h3>
-                <div class="input-group">
-                    <label>Ambiente</label>
-                    <select id="pin-ambiente-select">${options}</select>
-                </div>
-                <div class="pin-modal-actions">
-                    <button class="btn btn-secondary" onclick="app.closePinModal()">Cancelar</button>
-                    <button class="btn btn-primary" onclick="app.confirmPin()">Adicionar</button>
-                </div>
-            </div>
-        `;
-        modal.classList.add('active');
-    },
-    closePinModal() {
-        const modal = document.getElementById('pin-modal');
-        if (modal) modal.classList.remove('active');
-        this.planta.pendingPin = null;
-    },
-    confirmPin() {
-        const select = document.getElementById('pin-ambiente-select');
-        if (!select || !this.planta.pendingPin) return;
-        this.data.plantaPins.push({
-            id: Date.now().toString(),
-            x: this.planta.pendingPin.x,
-            y: this.planta.pendingPin.y,
-            ambienteId: select.value
-        });
-        this.saveLocal(); this.syncToFirebase();
-        this.renderPins();
-        this.closePinModal();
-        this.showToast("Pin adicionado", 'success');
-        this.haptic('medium');
-    },
-
-    // ========== MEDIÇÃO RÁPIDA ==========
-    openQuickMeasure() {
-        this.qm = { tipo: null, ambienteId: null, paredeId: null, count: 0 };
-        const ambSelect = document.getElementById('qm-ambiente');
-        if (!ambSelect) return;
-        ambSelect.innerHTML = '<option value="">Selecione...</option>';
-        this.data.ambientes.forEach(a => { ambSelect.innerHTML += `<option value="${a.id}">${a.nome}</option>`; });
-        const details = document.getElementById('qm-step-details');
-        if (details) details.style.display = 'none';
-        const countEl = document.getElementById('qm-count');
-        if (countEl) countEl.textContent = '0';
-        document.querySelectorAll('.qm-type-btn').forEach(b => b.classList.remove('selected'));
-        const modal = document.getElementById('quick-measure-modal');
-        if (modal) modal.classList.add('active');
-        document.querySelectorAll('.qm-type-btn').forEach(btn => {
-            btn.onclick = () => {
-                document.querySelectorAll('.qm-type-btn').forEach(b => b.classList.remove('selected'));
-                btn.classList.add('selected');
-                this.qm.tipo = btn.getAttribute('data-type');
-                this.qmConfigurarCampos(this.qm.tipo);
-                if (details) details.style.display = 'block';
-                this.haptic('light');
-            };
-        });
-        this.haptic('medium');
-    },
-    closeQuickMeasure() {
-        const modal = document.getElementById('quick-measure-modal');
-        if (modal) modal.classList.remove('active');
-        this.renderDashboard();
-        if (this.currentAmbienteId) {
-            const amb = this.data.ambientes.find(a => a.id === this.currentAmbienteId);
-            if (amb) { this.renderParedes(amb); this.renderElementos(amb); }
-        }
-    },
-    qmConfigurarCampos(tipo) {
-        const labelA = document.getElementById('qm-label-a');
-        const labelB = document.getElementById('qm-label-b');
-        const campoBGroup = document.getElementById('qm-campo-b-group');
-        const campoCGroup = document.getElementById('qm-campo-c-group');
-        if (!labelA || !labelB || !campoBGroup || !campoCGroup) return;
-        campoBGroup.style.display = 'block';
-        campoCGroup.style.display = 'block';
-        switch(tipo) {
-            case 'parede': labelA.textContent = 'Comprimento (m)'; labelB.textContent = 'Altura (m)'; campoCGroup.style.display = 'none'; break;
-            case 'janela': case 'porta': labelA.textContent = 'Largura (m)'; labelB.textContent = 'Altura (m)'; break;
-            case 'tomada': case 'interruptor': case 'ponto_hidraulico': case 'ponto_gas':
-                labelA.textContent = 'Altura do Piso (m)'; campoBGroup.style.display = 'none'; campoCGroup.style.display = 'none'; break;
-            case 'ar_condicionado':
-                labelA.textContent = 'Altura (m)'; campoBGroup.style.display = 'none'; campoCGroup.style.display = 'none'; break;
-        }
-    },
-    qmLoadParedes() {
-        const ambSelect = document.getElementById('qm-ambiente');
-        if (!ambSelect) return;
-        const ambId = ambSelect.value;
-        this.qm.ambienteId = ambId;
-        const paredeSelect = document.getElementById('qm-parede');
-        if (!paredeSelect) return;
-        paredeSelect.innerHTML = '<option value="">Selecione...</option>';
-        if (!ambId) return;
-        const amb = this.data.ambientes.find(a => a.id === ambId);
-        if (!amb) return;
-        (amb.paredes || []).forEach(p => { paredeSelect.innerHTML += `<option value="${p.id}">${p.nome}</option>`; });
-    },
-    qmSave() {
-        if (!this.qm.tipo) return this.showToast("Escolha o tipo de medida.", 'warning');
-        if (!this.qm.ambienteId) return this.showToast("Escolha o ambiente.", 'warning');
-        const amb = this.data.ambientes.find(a => a.id === this.qm.ambienteId);
-        if (!amb) return;
-        const valorA = parseFloat(document.getElementById('qm-valor-a')?.value) || null;
-        const valorB = parseFloat(document.getElementById('qm-valor-b')?.value) || null;
-        const valorC = parseFloat(document.getElementById('qm-valor-c')?.value) || null;
-        const paredeId = document.getElementById('qm-parede')?.value || null;
-        if (!valorA) return this.showToast("Informe o valor principal.", 'warning');
-        if (this.qm.tipo === 'parede') {
-            if (!amb.paredes) amb.paredes = [];
-            amb.paredes.push({ id: Date.now().toString(), nome: `Parede ${(amb.paredes.length + 1)}`, comp: valorA, alt: valorB || 2.70 });
-        } else {
-            if (!amb.elementos) amb.elementos = [];
-            amb.elementos.push({ id: Date.now().toString(), paredeId: paredeId, tipo: this.qm.tipo, larg: valorA, alt: valorB, peitoril: valorC });
-        }
-        this.saveLocal(); this.syncToFirebase();
-        this.qm.count++;
-        const counter = document.getElementById('qm-count');
-        if (counter) counter.textContent = this.qm.count;
-        const counterBox = document.querySelector('.qm-counter');
-        if (counterBox) { counterBox.classList.remove('flash'); void counterBox.offsetWidth; counterBox.classList.add('flash'); }
-        const a = document.getElementById('qm-valor-a');
-        const b = document.getElementById('qm-valor-b');
-        const c = document.getElementById('qm-valor-c');
-        if (a) { a.value = ''; a.focus(); }
-        if (b) b.value = '';
-        if (c) c.value = '';
-        this.haptic('light');
-    },
-
-    // ========== RELATÓRIO (COM FOTOS) ==========
-    renderRelatorio() {
-        const container = document.getElementById('report-content');
-        if (!container) return;
-        const hoje = new Date().toLocaleDateString('pt-BR');
-        let html = `
-            <div class="report-header">
-                <h1>Relatório de Vistoria e Medição</h1>
-                <p><strong>Empreendimento:</strong> ${this.data.projeto.nome} Mood Aurora</p>
-                <p><strong>Data da Visita:</strong> ${this.data.projeto.dataVisita} &nbsp;|&nbsp; <strong>Emissão:</strong> ${hoje}</p>
-                <p><strong>Área Total Prevista na Planta:</strong> 55,70 m²</p>
-            </div>
-        `;
-        let totalParedes = 0, totalElementos = 0, totalFotos = 0;
-        this.data.ambientes.forEach(a => {
-            totalParedes += (a.paredes?.length || 0);
-            totalElementos += (a.elementos?.length || 0);
-            totalFotos += (a.fotos?.length || 0);
-        });
-        html += `
-            <div class="report-section">
-                <h2>Resumo Geral</h2>
-                <table class="report-table">
-                    <tr><th>Ambientes cadastrados</th><td>${this.data.ambientes.length}</td></tr>
-                    <tr><th>Paredes medidas</th><td>${totalParedes}</td></tr>
-                    <tr><th>Elementos registrados</th><td>${totalElementos}</td></tr>
-                    <tr><th>Fotografias anexadas</th><td>${totalFotos}</td></tr>
-                    <tr><th>Pins na planta</th><td>${this.data.plantaPins.length}</td></tr>
-                    <tr><th>Itens de marcenaria</th><td>${this.data.marcenaria.length}</td></tr>
-                    <tr><th style="color:#C41E16;">Divergências registradas</th><td style="color:#C41E16;font-weight:700;">${this.data.divergencias.length}</td></tr>
-                </table>
-            </div>
-        `;
-        // Divergências
-        if (this.data.divergencias.length > 0) {
-            html += `<div class="report-section"><h2 style="border-left-color:#FF3B30;">⚠️ Divergências</h2>`;
-            const prioLabel = { baixa: 'Baixa', media: 'Média', alta: 'Alta', critica: 'Crítica' };
-            const statusLabel = { aberta: 'Aberta', analise: 'Em análise', resolvida: 'Resolvida', aceita: 'Aceita' };
-            this.data.divergencias.forEach((d, i) => {
-                const dif = d.diferenca !== null ? d.diferenca : 0;
-                const pct = d.diferencaPercentual !== null ? d.diferencaPercentual : 0;
-                const sinal = dif > 0 ? '+' : '';
-                html += `
-                    <div class="report-divergencia-box">
-                        <h4>#${i+1} — ${d.elemento} (${d.ambienteNome})</h4>
-                        <p><strong>Medida na planta:</strong> ${d.medidaPlanta.toFixed(2)} m &nbsp;|&nbsp; <strong>Medida real:</strong> ${d.medidaReal.toFixed(2)} m &nbsp;|&nbsp; <strong>Diferença:</strong> ${sinal}${dif.toFixed(3)} m (${sinal}${pct.toFixed(2)}%)</p>
-                        <p><strong>Prioridade:</strong> ${prioLabel[d.prioridade]} &nbsp;|&nbsp; <strong>Status:</strong> ${statusLabel[d.status]}</p>
-                        ${d.descricao ? `<p><strong>Descrição:</strong> ${d.descricao}</p>` : ''}
-                        ${d.pergunta ? `<p><strong>Pergunta à construtora:</strong> ${d.pergunta}</p>` : ''}
-                        ${d.foto ? `<div class="report-foto-grid" style="margin-top:8px;"><img src="${d.foto}" alt="Foto divergência"></div>` : ''}
-                    </div>
-                `;
-            });
-            html += `</div>`;
-        }
-        // Ambientes com fotos
-        this.data.ambientes.forEach(amb => {
-            const area = (amb.comp && amb.larg) ? (amb.comp * amb.larg).toFixed(2) : 'Não medido';
-            html += `
-                <div class="report-section">
-                    <div class="report-ambiente-title">${amb.nome}</div>
-                    <table class="report-table">
-                        <tr>
-                            <th>Comprimento</th><td>${amb.comp ? amb.comp + ' m' : '—'}</td>
-                            <th>Largura</th><td>${amb.larg ? amb.larg + ' m' : '—'}</td>
-                            <th>Pé-direito</th><td>${amb.peDireito ? amb.peDireito + ' m' : '—'}</td>
-                        </tr>
-                        <tr>
-                            <th>Área do Piso</th><td>${area !== 'Não medido' ? area + ' m²' : '—'}</td>
-                            <th>Paredes</th><td>${amb.paredes?.length || 0}</td>
-                            <th>Elementos</th><td>${amb.elementos?.length || 0}</td>
-                        </tr>
-                    </table>
-            `;
-            if (amb.paredes && amb.paredes.length > 0) {
-                html += `<h3 style="font-size:0.95rem; margin:12px 0 6px;">Paredes</h3>
-                    <table class="report-table">
-                        <thead><tr><th>Parede</th><th>Comp.</th><th>Alt.</th><th>Área Bruta</th><th>Vãos</th><th>Área Líquida</th></tr></thead><tbody>`;
-                amb.paredes.forEach(p => {
-                    const bruta = (p.comp * p.alt);
-                    let vaos = 0;
-                    (amb.elementos || []).filter(e => e.paredeId === p.id).forEach(e => {
-                        if (e.larg && e.alt) vaos += (e.larg * e.alt);
-                    });
-                    html += `<tr><td>${p.nome}</td><td>${p.comp}</td><td>${p.alt}</td><td>${bruta.toFixed(2)}</td><td>${vaos.toFixed(2)}</td><td><strong>${(bruta - vaos).toFixed(2)}</strong></td></tr>`;
-                });
-                html += `</tbody></table>`;
-            }
-            if (amb.elementos && amb.elementos.length > 0) {
-                const tipoLabel = { janela: 'Janela', porta: 'Porta', tomada: 'Tomada', interruptor: 'Interruptor', ponto_hidraulico: 'Hidráulica', ponto_gas: 'Gás', ar_condicionado: 'Ar-Cond.' };
-                html += `<h3 style="font-size:0.95rem; margin:12px 0 6px;">Elementos</h3>
-                    <table class="report-table">
-                        <thead><tr><th>Tipo</th><th>Parede</th><th>Larg.</th><th>Alt.</th><th>Peitoril</th></tr></thead><tbody>`;
-                amb.elementos.forEach(e => {
-                    const parede = amb.paredes.find(p => p.id === e.paredeId);
-                    html += `<tr><td>${tipoLabel[e.tipo] || e.tipo}</td><td>${parede ? parede.nome : '—'}</td><td>${e.larg || '—'}</td><td>${e.alt || '—'}</td><td>${e.peitoril || '—'}</td></tr>`;
-                });
-                html += `</tbody></table>`;
-            }
-            // FOTOS DO AMBIENTE (NOVO)
-            if (amb.fotos && amb.fotos.length > 0) {
-                html += `<h3 style="font-size:0.95rem; margin:12px 0 6px;">Fotos do Ambiente (${amb.fotos.length})</h3>`;
-                html += `<div class="report-foto-grid">`;
-                amb.fotos.forEach(foto => { html += `<img src="${foto}" alt="Foto">`; });
-                html += `</div>`;
-            }
-            html += `</div>`;
-        });
-        // Marcenaria
-        if (this.data.marcenaria && this.data.marcenaria.length > 0) {
-            html += `<div class="report-section"><h2>🛋️ Planejamento de Marcenaria</h2>`;
-            html += `<table class="report-table"><thead><tr><th>Ambiente</th><th>Item</th><th>Larg.</th><th>Prof.</th><th>Alt.</th><th>Folga</th><th>Avaliação</th></tr></thead><tbody>`;
-            this.data.marcenaria.forEach(m => {
-                const amb = this.data.ambientes.find(a => a.id === m.ambienteId);
-                const av = this.marcAvaliar(m);
-                const avLabel = { cabe: '✓ Cabe', apertado: '⚠ Apertado', 'nao-cabe': '✗ Não cabe', 'sem-medida': '— Sem medida' }[av.status];
-                html += `<tr>
-                    <td>${amb ? amb.nome : '—'}</td>
-                    <td>${m.nome}${m.modelo ? ' (' + m.modelo + ')' : ''}</td>
-                    <td>${m.largura} m</td>
-                    <td>${m.profundidade} m</td>
-                    <td>${m.altura || '—'}</td>
-                    <td>${m.folga} cm</td>
-                    <td>${avLabel}</td>
-                </tr>`;
-            });
-            html += `</tbody></table></div>`;
-        }
-        // Checklist
-        html += `<div class="report-section"><h2>Checklist Geral</h2><table class="report-table"><thead><tr><th>Item</th><th>Status</th></tr></thead><tbody>`;
-        const statusLabel2 = { pendente: 'Pendente', medido: 'Medido', conferido: 'Conferido', na: 'N/A' };
-        this.data.checklist.forEach(chk => {
-            html += `<tr><td>${chk.texto}</td><td>${statusLabel2[chk.status] || chk.status}</td></tr>`;
-        });
-        html += `</tbody></table></div>`;
-        html += `<div class="report-section" style="text-align:center; margin-top:40px; font-size:0.8rem; color:#888;"><p>Relatório gerado pelo aplicativo de Medição e Vistoria.</p></div>`;
-        container.innerHTML = html;
-    },
-    printReport() {
-    // 1. Garante que estamos na tela de relatório
-    document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
-    const relView = document.getElementById('view-relatorio');
-    if (relView) relView.classList.add('active');
-    
-    // 2. Renderiza o relatório (caso haja dados novos)
-    this.renderRelatorio();
-    
-    // 3. Força o navegador a recalcular o layout antes de imprimir
-    //    (Safari precisa disso para pegar o CSS @media print corretamente)
-    void document.body.offsetHeight;
-    
-    // 4. Rola para o topo (a prévia começa do topo da página)
-    const main = document.getElementById('app-content');
-    if (main) main.scrollTop = 0;
-    
-    // 5. Abre o diálogo de impressão após o layout estabilizar
-    setTimeout(() => {
-        window.print();
-    }, 300);
-    
-    this.haptic('medium');
-},
-printReportInNewTab() {
-    // Renderiza o HTML do relatório
-    this.renderRelatorio();
-    const reportHtml = document.getElementById('report-content').innerHTML;
-    
-    // Monta uma página limpa com CSS embutido
-    const css = `
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #000; background: #fff; padding: 20px; max-width: 900px; margin: 0 auto; }
-        h1 { font-size: 1.5rem; border-bottom: 2px solid #333; padding-bottom: 10px; text-align: center; }
-        h2 { font-size: 1.1rem; border-left: 4px solid #007AFF; padding-left: 10px; margin-top: 24px; }
-        h3 { font-size: 1rem; margin-top: 16px; }
-        p { font-size: 0.9rem; line-height: 1.4; }
-        table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-bottom: 12px; }
-        th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; }
-        th { background: #f0f0f0; font-weight: 700; }
-        .report-foto-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 8px 0; }
-        .report-foto-grid img { width: 100%; height: 100px; object-fit: cover; border-radius: 6px; border: 1px solid #ccc; }
-        .report-divergencia-box { background: #FFF5F4; border-left: 4px solid #FF3B30; padding: 12px 16px; margin-bottom: 12px; border-radius: 6px; }
-        .report-divergencia-box h4 { margin: 0 0 6px; color: #C41E16; }
-        .report-ambiente-title { font-size: 1.2rem; font-weight: 800; margin: 24px 0 8px; padding-bottom: 6px; border-bottom: 1px solid #999; }
-        .report-header { text-align: center; margin-bottom: 20px; }
-        .report-header p { margin: 2px 0; color: #555; }
-        @media print {
-            body { padding: 0; max-width: none; }
-            .report-foto-grid { grid-template-columns: repeat(4, 1fr); }
-            .report-foto-grid img { height: 80px; }
-            .report-section { page-break-inside: avoid; }
-            .report-divergencia-box { page-break-inside: avoid; }
-        }
-    `;
-    
-    const fullHtml = `<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-    <meta charset="UTF-8">
-    <title>Relatório de Vistoria</title>
-    <style>${css}</style>
-</head>
-<body>${reportHtml}</body>
-</html>`;
-    
-    // Abre em nova aba
-    const win = window.open('', '_blank');
-    if (!win) {
-        this.showToast("Bloqueador de popup impediu. Permita popups neste site.", 'error');
-        return;
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg: #000000;
+        --bg-elevated: #1C1C1E;
+        --card-bg: rgba(28, 28, 30, 0.85);
+        --text: #FFFFFF;
+        --text-light: #8E8E93;
+        --border: rgba(84, 84, 88, 0.4);
+        --input-bg: rgba(58, 58, 60, 0.6);
+        --nav-bg: rgba(28, 28, 30, 0.8);
+        --header-bg: rgba(0, 0, 0, 0.75);
+        --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.4);
     }
-    win.document.open();
-    win.document.write(fullHtml);
-    win.document.close();
-    
-    // Aguarda as imagens carregarem antes de imprimir
-    win.onload = () => {
-        setTimeout(() => {
-            win.focus();
-            win.print();
-        }, 500);
-    };
-    this.haptic('medium');
-},
-    exportCSV() {
-        let csv = '\uFEFF';
-        csv += 'Ambiente;Tipo;Identificação/Elemento;Largura (m);Altura/Comprimento (m);Peitoril (m);Área (m²)\n';
-        this.data.ambientes.forEach(amb => {
-            const areaPiso = (amb.comp && amb.larg) ? (amb.comp * amb.larg).toFixed(2) : '';
-            csv += `"${amb.nome}";"Piso";"—";"${amb.larg || ''}";"${amb.comp || ''}";"${amb.peDireito || ''}";"${areaPiso}"\n`;
-            (amb.paredes || []).forEach(p => {
-                const bruta = (p.comp * p.alt).toFixed(2);
-                csv += `"${amb.nome}";"Parede";"${p.nome}";"${p.comp}";"${p.alt}";"";"${bruta}"\n`;
-            });
-            (amb.elementos || []).forEach(e => {
-                const parede = amb.paredes.find(p => p.id === e.paredeId);
-                csv += `"${amb.nome}";"${e.tipo}";"${parede ? parede.nome : ''}";"${e.larg || ''}";"${e.alt || ''}";"${e.peitoril || ''}";""\n`;
-            });
-        });
-        csv += '\nChecklist;Status\n';
-        this.data.checklist.forEach(chk => { csv += `"${chk.texto}";"${chk.status}"\n`; });
-        csv += '\nDivergências;Ambiente;Elemento;Medida Planta (m);Medida Real (m);Diferença (m);Diferença (%);Prioridade;Status;Descrição;Pergunta\n';
-        this.data.divergencias.forEach(d => {
-            const dif = d.diferenca !== null ? d.diferenca.toFixed(3) : '';
-            const pct = d.diferencaPercentual !== null ? d.diferencaPercentual.toFixed(2) : '';
-            csv += `"Sim";"${d.ambienteNome}";"${d.elemento}";"${d.medidaPlanta}";"${d.medidaReal}";"${dif}";"${pct}";"${d.prioridade}";"${d.status}";"${(d.descricao || '').replace(/"/g, '""')}";"${(d.pergunta || '').replace(/"/g, '""')}"\n`;
-        });
-        csv += '\nMarcenaria;Ambiente;Item;Largura (m);Profundidade (m);Altura (m);Folga (cm);Avaliação\n';
-        this.data.marcenaria.forEach(m => {
-            const amb = this.data.ambientes.find(a => a.id === m.ambienteId);
-            const av = this.marcAvaliar(m);
-            const avLabel = { cabe: 'Cabe', apertado: 'Apertado', 'nao-cabe': 'Não cabe', 'sem-medida': 'Sem medida' }[av.status];
-            csv += `"Sim";"${amb ? amb.nome : ''}";"${m.nome}";"${m.largura}";"${m.profundidade}";"${m.altura || ''}";"${m.folga}";"${avLabel}"\n`;
-        });
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `relatorio_vistoria_${this.data.projeto.id}_${new Date().toISOString().split('T')[0]}.csv`;
-        a.click();
-        URL.revokeObjectURL(url);
-        this.showToast("CSV exportado", 'success');
-        this.haptic('medium');
+    .btn-secondary { background: rgba(120, 120, 128, 0.24); }
+    .list-item { background: var(--bg-elevated); }
+    .report-paper { background: #1C1C1E !important; color: #fff !important; }
+    .report-table th { background: #2C2C2E !important; color: #fff !important; }
+    .report-table td { background: #1C1C1E !important; border-color: #3A3A3C !important; }
+    .report-table tr:nth-child(even) td { background: #232325 !important; }
+    .report-divergencia-box { background: rgba(255, 59, 48, 0.1) !important; }
+    .modal-sheet { background: #1C1C1E; }
+    .pin-modal { background: #1C1C1E; }
+    .planta-viewer { background: #1C1C1E; }
+    .qm-type-btn { background: rgba(120, 120, 128, 0.24); color: #fff; }
+    .tab-btn { background: rgba(120, 120, 128, 0.24); }
+    .status-select { background: #2C2C2E; color: #fff; }
+    .div-diff { background: rgba(58, 58, 60, 0.6); }
+    .vist-item { background: #1C1C1E; }
+    .vist-prep-item { background: #1C1C1E; }
+    .vist-pendencia-card { background: #1C1C1E; }
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
+    background-color: var(--bg);
+    color: var(--text);
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+#app-header {
+    background: var(--header-bg);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    padding: calc(16px + var(--safe-top)) 20px 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    min-height: 56px;
+}
+
+#header-title { font-size: 1.15rem; font-weight: 700; letter-spacing: -0.02em; margin: 0; color: var(--text); }
+
+.header-right { display: flex; align-items: center; gap: 8px; }
+
+.status-badge {
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 5px 10px;
+    border-radius: 20px;
+    background: rgba(142, 142, 147, 0.15);
+    color: var(--secondary);
+    transition: all 0.3s ease;
+    white-space: nowrap;
+}
+.status-badge.saved { background: rgba(52, 199, 89, 0.15); color: var(--success); }
+.status-badge.syncing { background: rgba(255, 149, 0, 0.15); color: var(--warning); animation: pulse 1.5s infinite; }
+.status-badge.unsynced { background: rgba(255, 59, 48, 0.15); color: var(--danger); }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+
+.unsync-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--danger);
+    display: none;
+    animation: pulse 2s infinite;
+}
+.unsync-dot.active { display: block; }
+
+#app-content {
+    flex: 1;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 20px;
+    padding-bottom: calc(120px + var(--safe-bottom));
+    scroll-behavior: smooth;
+}
+.view { display: none; }
+.view.active { display: block; animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+@keyframes slideUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+
+.page-title { font-size: 1.8rem; font-weight: 800; letter-spacing: -0.03em; margin: 0 0 20px 0; color: var(--text); }
+
+.card {
+    background: var(--card-bg);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: var(--radius);
+    padding: 20px;
+    margin-bottom: 20px;
+    box-shadow: var(--shadow-card);
+}
+.card h2, .card h3 { margin-top: 0; font-size: 1.1rem; font-weight: 700; margin-bottom: 16px; color: var(--text); }
+
+.btn {
+    display: block;
+    width: 100%;
+    padding: 16px;
+    border: none;
+    border-radius: 12px;
+    font-size: 1rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    margin-bottom: 10px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    text-align: center;
+    font-family: inherit;
+}
+.btn:active { transform: scale(0.97); }
+.btn-primary { background: var(--primary); color: white; box-shadow: 0 4px 12px var(--primary-glow); }
+.btn-primary:active { background: #005bb5; box-shadow: none; }
+.btn-secondary { background: rgba(120, 120, 128, 0.12); color: var(--primary); }
+.btn-secondary:active { background: rgba(120, 120, 128, 0.2); }
+.btn-back { background: transparent; color: var(--primary); text-align: left; padding: 0; margin-bottom: 16px; font-size: 0.95rem; width: auto; display: inline-block; }
+.btn-icon-danger { background: transparent; color: var(--danger); border: none; font-size: 0.85rem; font-weight: 600; padding: 4px 8px; cursor: pointer; }
+
+.input-group { margin-bottom: 16px; width: 100%; }
+.input-group label { display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-light); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.02em; }
+.input-group input, .input-group select {
+    width: 100%; padding: 14px 16px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font-size: 1rem;
+    background: var(--input-bg);
+    color: var(--text);
+    -webkit-appearance: none;
+    font-family: inherit;
+}
+.input-group input:focus, .input-group select:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 4px var(--primary-glow);
+    background: var(--bg-elevated);
+}
+.input-row { display: flex; gap: 12px; flex-wrap: wrap; }
+.input-row .input-group { flex: 1; min-width: 100px; }
+
+textarea {
+    width: 100%; padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font-family: inherit;
+    font-size: 0.95rem;
+    resize: vertical;
+    background: var(--input-bg);
+    color: var(--text);
+    -webkit-appearance: none;
+}
+textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 4px var(--primary-glow); background: var(--bg-elevated); }
+
+.tabs { display: flex; gap: 8px; margin-bottom: 20px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
+.tabs::-webkit-scrollbar { display: none; }
+.tab-btn {
+    padding: 10px 20px; border: none; border-radius: 24px;
+    background: rgba(120, 120, 128, 0.12); color: var(--text-light);
+    font-weight: 600; font-size: 0.9rem; white-space: nowrap;
+    font-family: inherit;
+}
+.tab-btn.active { background: var(--primary); color: white; box-shadow: 0 4px 12px var(--primary-glow); }
+.tab-content { display: none; }
+.tab-content.active { display: block; animation: fadeIn 0.2s; }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+.list-container { display: flex; flex-direction: column; gap: 12px; }
+.list-item {
+    background: var(--bg-elevated);
+    padding: 16px;
+    border-radius: 14px;
+    border: 1px solid var(--border);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.02);
+}
+.list-item-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.list-item-header strong { font-size: 1rem; font-weight: 700; color: var(--text); }
+.list-item-details { font-size: 0.85rem; color: var(--text-light); line-height: 1.5; }
+.empty-msg { text-align: center; color: var(--text-light); font-size: 0.9rem; padding: 20px; font-style: italic; }
+
+.badge { background: rgba(0, 122, 255, 0.1); color: var(--primary); padding: 4px 10px; border-radius: 20px; font-size: 0.8rem; font-weight: 700; }
+.status-select { padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); font-size: 0.8rem; font-weight: 600; background: var(--input-bg); color: var(--text); font-family: inherit; }
+
+.progress-container { background: rgba(120, 120, 128, 0.15); border-radius: 10px; height: 14px; overflow: hidden; margin: 12px 0; }
+.progress-bar { background: linear-gradient(90deg, #007AFF, #34C759); height: 100%; width: 0%; transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1); border-radius: 10px; }
+.stats-list { list-style: none; padding: 0; margin: 16px 0 0; display: flex; justify-content: space-between; font-size: 0.85rem; font-weight: 600; color: var(--text-light); }
+.stats-list span { color: var(--text); font-weight: 800; }
+
+.gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 10px; margin-top: 16px; }
+.gallery img { width: 100%; height: 90px; object-fit: cover; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+
+.search-bar { position: relative; margin-bottom: 16px; }
+.search-bar input {
+    width: 100%; padding: 12px 16px 12px 40px;
+    border: 1px solid var(--border); border-radius: 10px;
+    font-size: 0.95rem; background: var(--input-bg); color: var(--text); font-family: inherit;
+}
+.search-bar input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 4px var(--primary-glow); background: var(--bg-elevated); }
+.search-bar .search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-light); pointer-events: none; font-size: 1rem; }
+
+.amb-card-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 12px; }
+.amb-mini-card {
+    background: var(--bg-elevated); border-radius: 12px; padding: 12px;
+    border-left: 4px solid var(--border); cursor: pointer;
+    transition: transform 0.15s ease; box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+}
+.amb-mini-card:active { transform: scale(0.97); }
+.amb-mini-card.status-vermelho { border-left-color: var(--danger); }
+.amb-mini-card.status-amarelo { border-left-color: var(--warning); }
+.amb-mini-card.status-verde { border-left-color: var(--success); }
+.amb-mini-card .mini-nome { font-size: 0.85rem; font-weight: 700; color: var(--text); margin-bottom: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.amb-mini-card .mini-sub { font-size: 0.7rem; color: var(--text-light); font-weight: 600; }
+
+.toast-container {
+    position: fixed; top: calc(70px + var(--safe-top)); left: 50%; transform: translateX(-50%);
+    z-index: 500; display: flex; flex-direction: column; gap: 8px; align-items: center; pointer-events: none;
+}
+.toast {
+    background: rgba(0, 0, 0, 0.9); color: #fff; padding: 12px 20px; border-radius: 24px;
+    font-size: 0.9rem; font-weight: 600; box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    animation: toastIn 0.3s cubic-bezier(0.16, 1, 0.3, 1); max-width: 90vw; text-align: center;
+}
+.toast.success { background: rgba(52, 199, 89, 0.95); }
+.toast.error { background: rgba(255, 59, 48, 0.95); }
+.toast.warning { background: rgba(255, 149, 0, 0.95); }
+.toast.hide { animation: toastOut 0.3s ease forwards; }
+@keyframes toastIn { from { opacity: 0; transform: translateY(-10px) scale(0.9); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes toastOut { to { opacity: 0; transform: translateY(-10px) scale(0.9); } }
+
+#fab-quick-measure {
+    position: fixed; bottom: calc(90px + var(--safe-bottom)); right: 20px;
+    width: 64px; height: 64px; border-radius: 32px;
+    background: linear-gradient(135deg, #FF9500, #FF3B30); color: white; border: none;
+    font-size: 1.6rem; box-shadow: 0 6px 20px rgba(255, 149, 0, 0.45);
+    cursor: pointer; z-index: 30;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    transition: transform 0.15s ease;
+}
+#fab-quick-measure:active { transform: scale(0.9); }
+.fab-label { font-size: 0.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; margin-top: -2px; }
+
+.modal-overlay {
+    position: fixed; inset: 0; background: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+    z-index: 100; display: none; align-items: flex-end; justify-content: center;
+    opacity: 0; transition: opacity 0.25s ease;
+}
+.modal-overlay.active { display: flex; opacity: 1; }
+.modal-sheet {
+    background: var(--bg-elevated); width: 100%; max-width: 600px;
+    border-radius: 24px 24px 0 0; padding: 12px 20px calc(20px + var(--safe-bottom));
+    max-height: 90vh; overflow-y: auto;
+    transform: translateY(100%); transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+    box-shadow: 0 -8px 40px rgba(0,0,0,0.15);
+}
+.modal-overlay.active .modal-sheet { transform: translateY(0); }
+.modal-handle { width: 40px; height: 5px; background: var(--border); border-radius: 3px; margin: 0 auto 12px; }
+.modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.modal-header h2 { margin: 0; font-size: 1.3rem; font-weight: 800; letter-spacing: -0.02em; color: var(--text); }
+.modal-close { background: rgba(120, 120, 128, 0.12); border: none; width: 32px; height: 32px; border-radius: 16px; font-size: 1rem; color: var(--text-light); cursor: pointer; font-weight: 700; }
+
+.qm-label { display: block; font-size: 0.8rem; font-weight: 700; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 10px; }
+.qm-type-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 16px; }
+.qm-type-btn {
+    background: rgba(120, 120, 128, 0.12); border: 2px solid transparent; border-radius: 12px;
+    padding: 12px 4px; font-size: 0.72rem; font-weight: 600; color: var(--text); cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; gap: 4px; line-height: 1.2; font-family: inherit;
+}
+.qm-type-btn.selected { background: rgba(255, 149, 0, 0.12); border-color: var(--warning); color: var(--warning); font-weight: 700; }
+.qm-counter {
+    display: flex; justify-content: space-between; align-items: center;
+    background: rgba(52, 199, 89, 0.1); padding: 12px 16px; border-radius: 12px;
+    margin-bottom: 12px; font-size: 0.9rem; color: #1E8E3E; font-weight: 600;
+}
+.qm-counter strong { font-size: 1.4rem; font-weight: 800; }
+.qm-counter.flash { animation: flashSuccess 0.5s ease; }
+@keyframes flashSuccess { 0% { background: rgba(52, 199, 89, 0.3); } 100% { background: rgba(52, 199, 89, 0.1); } }
+
+.planta-header-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.planta-header-bar h2 { margin: 0; font-size: 1.4rem; font-weight: 800; letter-spacing: -0.02em; }
+.planta-toolbar { display: flex; gap: 6px; }
+.planta-tool-btn {
+    width: 40px; height: 40px; border-radius: 50%;
+    background: var(--card-bg); border: 1px solid var(--border);
+    font-size: 1.2rem; font-weight: 700; color: var(--text); cursor: pointer;
+    display: flex; align-items: center; justify-content: center; font-family: inherit;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+}
+.planta-tool-btn:active { transform: scale(0.9); }
+.planta-viewer {
+    position: relative; background: var(--bg-elevated); border-radius: var(--radius);
+    overflow: hidden; height: 60vh; min-height: 320px; touch-action: none;
+    box-shadow: var(--shadow-card); border: 1px solid var(--border);
+}
+.planta-empty {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; padding: 20px; text-align: center;
+    color: var(--text-light); gap: 8px;
+}
+#planta-stage { position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform-origin: 0 0; will-change: transform; }
+#planta-img { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; user-select: none; -webkit-user-select: none; pointer-events: none; }
+#planta-pins-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+.planta-pin {
+    position: absolute; width: 32px; height: 32px; border-radius: 50% 50% 50% 0;
+    transform: translate(-50%, -100%) rotate(-45deg); border: 3px solid #fff;
+    box-shadow: 0 3px 10px rgba(0,0,0,0.3); cursor: pointer; pointer-events: auto;
+    display: flex; align-items: center; justify-content: center;
+}
+.planta-pin .pin-label { transform: rotate(45deg); font-size: 0.65rem; font-weight: 800; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.3); white-space: nowrap; max-width: 90px; overflow: hidden; text-overflow: ellipsis; }
+.planta-pin.status-verde { background: #34C759; }
+.planta-pin.status-amarelo { background: #FF9500; }
+.planta-pin.status-vermelho { background: #FF3B30; }
+.planta-hint {
+    position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.85); color: white; padding: 10px 16px; border-radius: 20px;
+    font-size: 0.85rem; font-weight: 600; display: none; align-items: center; gap: 10px;
+    z-index: 5; white-space: nowrap;
+}
+.planta-hint.active { display: flex; }
+.planta-hint-cancel { background: rgba(255,255,255,0.2); color: white; border: none; padding: 4px 10px; border-radius: 12px; font-size: 0.8rem; font-weight: 700; cursor: pointer; font-family: inherit; }
+.planta-legend { display: flex; gap: 16px; justify-content: center; margin: 12px 0; font-size: 0.8rem; color: var(--text-light); font-weight: 600; }
+.legend-item { display: flex; align-items: center; gap: 6px; }
+.legend-dot { width: 12px; height: 12px; border-radius: 50%; }
+.legend-dot.verde { background: #34C759; }
+.legend-dot.amarelo { background: #FF9500; }
+.legend-dot.vermelho { background: #FF3B30; }
+.planta-actions { display: flex; flex-direction: column; gap: 8px; }
+
+.pin-modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.4); backdrop-filter: blur(4px);
+    z-index: 200; display: none; align-items: center; justify-content: center; padding: 20px;
+}
+.pin-modal-overlay.active { display: flex; }
+.pin-modal { background: var(--bg-elevated); border-radius: 16px; padding: 20px; width: 100%; max-width: 360px; box-shadow: 0 8px 40px rgba(0,0,0,0.2); }
+.pin-modal h3 { margin: 0 0 16px; font-size: 1.1rem; color: var(--text); }
+.pin-modal-actions { display: flex; gap: 8px; margin-top: 16px; }
+.pin-modal-actions .btn { margin: 0; flex: 1; }
+
+.div-calculo-box {
+    background: rgba(255, 59, 48, 0.08); border: 1px solid rgba(255, 59, 48, 0.25);
+    border-radius: 12px; padding: 12px 16px; margin-bottom: 16px;
+    display: flex; justify-content: space-around;
+}
+.div-calculo-item { display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 0.8rem; color: var(--text-light); font-weight: 600; }
+.div-calculo-item strong { font-size: 1.2rem; font-weight: 800; color: var(--danger); }
+
+.foto-preview { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 8px; }
+.foto-preview img { width: 80px; height: 80px; object-fit: cover; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+
+.div-card { border-left: 4px solid var(--border); padding-left: 12px; }
+.div-card.prioridade-baixa { border-left-color: #34C759; }
+.div-card.prioridade-media { border-left-color: #FF9500; }
+.div-card.prioridade-alta { border-left-color: #FF6B00; }
+.div-card.prioridade-critica { border-left-color: #FF3B30; }
+.div-card .div-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 8px; }
+.div-card .div-title { font-weight: 700; font-size: 1rem; line-height: 1.3; color: var(--text); }
+.div-card .div-sub { font-size: 0.8rem; color: var(--text-light); margin-top: 2px; }
+.div-status-badge { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; white-space: nowrap; }
+.div-status-badge.status-aberta { background: rgba(255, 59, 48, 0.15); color: var(--danger); }
+.div-status-badge.status-analise { background: rgba(255, 149, 0, 0.15); color: var(--warning); }
+.div-status-badge.status-resolvida { background: rgba(52, 199, 89, 0.15); color: var(--success); }
+.div-status-badge.status-aceita { background: rgba(142, 142, 147, 0.15); color: var(--secondary); }
+.div-diff { background: rgba(120, 120, 128, 0.08); border-radius: 8px; padding: 8px 12px; margin: 8px 0; font-size: 0.85rem; display: flex; justify-content: space-between; align-items: center; }
+.div-diff strong { color: var(--danger); }
+.div-diff .div-pct { font-size: 0.75rem; color: var(--text-light); }
+.div-card .div-actions { display: flex; gap: 8px; margin-top: 10px; }
+.div-card .div-actions button { flex: 1; padding: 8px; font-size: 0.8rem; border-radius: 8px; border: none; font-weight: 600; cursor: pointer; font-family: inherit; }
+.div-card .div-actions .btn-status { background: rgba(0, 122, 255, 0.1); color: var(--primary); }
+.div-card .div-actions .btn-delete { background: rgba(255, 59, 48, 0.1); color: var(--danger); }
+.div-card .div-foto { width: 100%; max-height: 160px; object-fit: cover; border-radius: 10px; margin-top: 8px; }
+
+.filter-bar { display: flex; gap: 8px; margin-bottom: 12px; overflow-x: auto; }
+.filter-bar select { flex: 1; padding: 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-elevated); font-size: 0.85rem; font-weight: 600; color: var(--text); font-family: inherit; }
+
+.ctx-section-title {
+    font-size: 0.95rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em;
+    color: var(--text-light); margin: 16px 0 8px; padding-bottom: 6px; border-bottom: 1px solid var(--border);
+}
+.ctx-section-title:first-child { margin-top: 0; }
+.ctx-item {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 12px 14px; background: var(--bg-elevated); border: 1px solid var(--border);
+    border-radius: 12px; margin-bottom: 8px;
+}
+.ctx-item .ctx-label { flex: 1; font-size: 0.9rem; font-weight: 600; line-height: 1.3; }
+.ctx-item select {
+    padding: 6px 8px; border-radius: 8px; border: 1px solid var(--border);
+    font-size: 0.78rem; font-weight: 600; background: var(--input-bg); color: var(--text);
+    font-family: inherit; max-width: 110px;
+}
+
+.hint-text { font-size: 0.85rem; color: var(--text-light); margin: -8px 0 16px; line-height: 1.4; }
+.marc-card { border-left: 4px solid var(--primary); }
+.marc-card.status-cabe { border-left-color: var(--success); }
+.marc-card.status-apertado { border-left-color: var(--warning); }
+.marc-card.status-nao-cabe { border-left-color: var(--danger); }
+.marc-card .marc-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 6px; }
+.marc-card .marc-nome { font-weight: 700; font-size: 1rem; line-height: 1.3; }
+.marc-card .marc-sub { font-size: 0.8rem; color: var(--text-light); margin-top: 2px; }
+.marc-badge { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; white-space: nowrap; }
+.marc-badge.cabe { background: rgba(52, 199, 89, 0.15); color: var(--success); }
+.marc-badge.apertado { background: rgba(255, 149, 0, 0.15); color: var(--warning); }
+.marc-badge.nao-cabe { background: rgba(255, 59, 48, 0.15); color: var(--danger); }
+.marc-badge.sem-medida { background: rgba(142, 142, 147, 0.15); color: var(--secondary); }
+.marc-dims { display: flex; gap: 12px; flex-wrap: wrap; font-size: 0.8rem; color: var(--text-light); font-weight: 600; margin: 8px 0; }
+.marc-dims span strong { color: var(--text); }
+.marc-alerta { font-size: 0.8rem; padding: 8px 12px; border-radius: 8px; margin-top: 6px; line-height: 1.4; }
+.marc-alerta.ok { background: rgba(52, 199, 89, 0.1); color: #1E8E3E; }
+.marc-alerta.atencao { background: rgba(255, 149, 0, 0.1); color: #B46100; }
+.marc-alerta.erro { background: rgba(255, 59, 48, 0.1); color: #C41E16; }
+.marc-actions { display: flex; gap: 8px; margin-top: 10px; }
+.marc-actions button { flex: 1; padding: 8px; font-size: 0.8rem; border-radius: 8px; border: none; font-weight: 600; cursor: pointer; font-family: inherit; }
+.marc-actions .btn-delete { background: rgba(255, 59, 48, 0.1); color: var(--danger); }
+
+/* VISTORIA DE ENTREGA */
+.vist-prep-item {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 14px; background: var(--bg-elevated); border: 1px solid var(--border);
+    border-radius: 12px; margin-bottom: 8px;
+}
+.vist-prep-item input[type="checkbox"] { width: 22px; height: 22px; accent-color: var(--primary); flex-shrink: 0; }
+.vist-prep-item label { flex: 1; font-size: 0.9rem; font-weight: 600; line-height: 1.3; cursor: pointer; }
+.vist-prep-item.done label { text-decoration: line-through; opacity: 0.6; }
+
+.vist-amb-card { cursor: pointer; border-left: 4px solid var(--border); transition: transform 0.15s ease; }
+.vist-amb-card:active { transform: scale(0.98); }
+.vist-amb-card.status-completo { border-left-color: var(--success); }
+.vist-amb-card.status-parcial { border-left-color: var(--warning); }
+.vist-amb-card.status-pendente { border-left-color: var(--danger); }
+.vist-amb-card .vist-amb-header { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; }
+.vist-amb-card .vist-amb-header strong { font-size: 1rem; font-weight: 700; }
+.vist-amb-card .vist-amb-sub { font-size: 0.8rem; color: var(--text-light); font-weight: 600; }
+
+.vist-section-title {
+    font-size: 0.95rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em;
+    color: var(--text-light); margin: 16px 0 8px; padding-bottom: 6px; border-bottom: 1px solid var(--border);
+}
+.vist-section-title:first-child { margin-top: 0; }
+
+.vist-item { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 10px; overflow: hidden; }
+.vist-item.status-defeito { border-left: 4px solid var(--danger); }
+.vist-item.status-ok { border-left: 4px solid var(--success); }
+.vist-item.status-na { border-left: 4px solid var(--secondary); opacity: 0.7; }
+.vist-item-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; padding: 12px 14px; }
+.vist-item-desc { flex: 1; font-size: 0.88rem; font-weight: 600; line-height: 1.4; color: var(--text); }
+.vist-item-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.vist-btn-status {
+    width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--bg-elevated); font-size: 0.9rem; font-weight: 700; cursor: pointer;
+    color: var(--text-light); display: flex; align-items: center; justify-content: center;
+    font-family: inherit; transition: all 0.15s ease;
+}
+.vist-btn-status:active { transform: scale(0.9); }
+.vist-btn-status.selected-ok { background: var(--success); color: white; border-color: var(--success); }
+.vist-btn-status.selected-defeito { background: var(--danger); color: white; border-color: var(--danger); }
+.vist-btn-status.selected-na { background: var(--secondary); color: white; border-color: var(--secondary); }
+
+.vist-item-detalhe { padding: 0 14px 14px; display: none; }
+.vist-item-detalhe.active { display: block; }
+.vist-item-detalhe textarea {
+    width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px;
+    font-size: 0.85rem; font-family: inherit; resize: vertical; background: var(--input-bg);
+    color: var(--text); margin-bottom: 8px; min-height: 60px;
+}
+.vist-item-detalhe textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-glow); }
+.vist-item-foto-preview { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.vist-item-foto-preview img { width: 70px; height: 70px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); }
+
+.vist-pendencia-card { border-left: 4px solid var(--danger); padding: 12px 14px; background: var(--bg-elevated); border-radius: 12px; margin-bottom: 8px; }
+.vist-pendencia-card .vist-pend-amb { font-size: 0.75rem; font-weight: 700; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px; }
+.vist-pendencia-card .vist-pend-desc { font-size: 0.9rem; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+.vist-pendencia-card .vist-pend-obs { font-size: 0.82rem; color: var(--text-light); line-height: 1.4; margin-bottom: 6px; }
+.vist-pendencia-card .vist-pend-fotos { display: flex; gap: 6px; flex-wrap: wrap; }
+.vist-pendencia-card .vist-pend-fotos img { width: 60px; height: 60px; object-fit: cover; border-radius: 6px; border: 1px solid var(--border); }
+
+.report-actions { margin-bottom: 20px; }
+.report-paper { background: var(--bg-elevated); border-radius: var(--radius); padding: 24px; box-shadow: var(--shadow-card); color: var(--text); }
+.report-header { text-align: center; border-bottom: 2px solid var(--text); padding-bottom: 16px; margin-bottom: 20px; }
+.report-header h1 { margin: 0 0 6px; font-size: 1.5rem; }
+.report-header p { margin: 2px 0; font-size: 0.9rem; color: var(--text-light); }
+.report-section { margin-bottom: 24px; }
+.report-section h2 { font-size: 1.1rem; border-left: 4px solid var(--primary); padding-left: 10px; margin-bottom: 10px; }
+.report-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-bottom: 8px; }
+.report-table th, .report-table td { border: 1px solid var(--border); padding: 8px; text-align: left; color: var(--text); }
+.report-table th { background: rgba(120, 120, 128, 0.1); font-weight: 700; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.03em; }
+.report-ambiente-title { font-size: 1.2rem; font-weight: 800; margin: 24px 0 8px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+.report-divergencia-box { background: #FFF5F4; border-left: 4px solid #FF3B30; padding: 12px 16px; border-radius: 6px; margin-bottom: 12px; }
+.report-divergencia-box h4 { margin: 0 0 6px; font-size: 0.95rem; color: #C41E16; }
+.report-divergencia-box p { margin: 4px 0; font-size: 0.85rem; color: #444; }
+.report-foto-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; margin-top: 8px; page-break-inside: avoid; }
+.report-foto-grid img { width: 100%; height: 100px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); }
+.report-vist-section { margin-bottom: 20px; }
+.report-vist-item { display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 0.85rem; page-break-inside: avoid; }
+.report-vist-item .vist-status-icon { font-weight: 800; flex-shrink: 0; width: 20px; text-align: center; }
+.report-vist-item.status-defeito .vist-status-icon { color: var(--danger); }
+.report-vist-item.status-ok .vist-status-icon { color: var(--success); }
+.report-vist-item.status-na .vist-status-icon { color: var(--secondary); }
+.report-vist-item .vist-item-text { flex: 1; }
+.report-vist-item .vist-item-obs { font-size: 0.8rem; color: var(--text-light); margin-top: 2px; font-style: italic; }
+
+#bottom-nav {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    background: var(--nav-bg);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    display: flex; justify-content: space-around; align-items: center;
+    padding: 8px 0 calc(8px + var(--safe-bottom));
+    border-top: 1px solid var(--border);
+    z-index: 20; min-height: 60px;
+}
+.nav-btn {
+    background: none; border: none; color: var(--text-light);
+    font-size: 0.65rem; font-weight: 600; padding: 6px 8px; cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    flex: 1; transition: color 0.2s ease; font-family: inherit; min-width: 0;
+}
+.nav-btn svg { width: 24px; height: 24px; stroke-width: 1.8; }
+.nav-btn.active { color: var(--primary); }
+.nav-btn.active svg { stroke-width: 2.2; }
+.nav-btn span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+
+.mt-2 { margin-top: 8px; }
+
+@media (min-width: 768px) {
+    #app-content { max-width: 900px; margin: 0 auto; width: 100%; padding: 32px 32px calc(140px + var(--safe-bottom)) 32px; }
+    .page-title { font-size: 2.2rem; }
+    .amb-card-grid { grid-template-columns: repeat(3, 1fr); }
+    .gallery { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+    .gallery img { height: 140px; }
+    .modal-overlay { align-items: center; }
+    .modal-sheet { border-radius: 24px; max-width: 520px; max-height: 85vh; transform: scale(0.95); opacity: 0; }
+    .modal-overlay.active .modal-sheet { transform: scale(1); opacity: 1; }
+    .modal-handle { display: none; }
+    #bottom-nav { padding: 10px 0 calc(12px + var(--safe-bottom)); }
+    .nav-btn { font-size: 0.7rem; padding: 8px 12px; }
+    .nav-btn svg { width: 26px; height: 26px; }
+}
+
+/* ============================================ */
+/* CSS DE IMPRESSÃO — ISOLADO                   */
+/* ============================================ */
+@media print {
+    @page { size: A4 portrait; margin: 12mm 10mm; }
+    html, body {
+        background: #fff !important; color: #000 !important;
+        height: auto !important; min-height: 0 !important;
+        overflow: visible !important; display: block !important;
+        margin: 0 !important; padding: 0 !important; font-size: 11pt !important;
     }
-    
-    // ==========================================================
-// VISTORIA DE ENTREGA
-// ==========================================================
-getChecklistVistoria() {
-    return {
-        preparacao: {
-            label: "Preparação",
-            itens: [
-                "Levar o Memorial Descritivo e as plantas (arquitetura, elétrica e hidráulica)",
-                "Levar carregador de celular para testar todas as tomadas",
-                "Levar régua ou trena para conferir medidas",
-                "Levar cabo de vassoura para bater nos pisos e identificar som oco",
-                "Levar lanterna para olhar dentro de shafts e cantos escuros",
-                "Levar fita crepe ou adesivos para marcar defeitos no local",
-                "Levar celular carregado para fotos",
-                "Agendar a vistoria com a construtora e ter um representante presente",
-                "Verificar se a unidade está com as chaves e a documentação",
-                "Anotar o nome e o cargo do representante da construtora"
-            ]
-        },
-        ambientes: {
-            sala: {
-                label: "Sala / Estar / Jantar",
-                sections: [
-                    { titulo: "Pisos e Paredes", itens: [
-                        "Caminhar por todo o piso e verificar se há peças soltas, desníveis ou som oco (bater com cabo de vassoura)",
-                        "Verificar se há trincas, rachaduras ou manchas nas paredes",
-                        "Passar a mão nas paredes para sentir irregularidades na pintura",
-                        "Verificar se os rodapés estão bem fixados e sem falhas",
-                        "Verificar se o piso está nivelado com o piso dos ambientes vizinhos (soleiras)"
-                    ]},
-                    { titulo: "Esquadrias e Portas", itens: [
-                        "Abrir e fechar a porta de entrada, verificando se desliza suavemente e se o trinco encaixa",
-                        "Verificar se a fechadura funciona bem",
-                        "Abrir e fechar as janelas, verificando se deslizam suavemente",
-                        "Verificar se os vidros não estão trincados ou lascados",
-                        "Verificar se as borrachas de vedação das janelas estão íntegras",
-                        "Verificar se há folgas entre a esquadria e a parede"
-                    ]},
-                    { titulo: "Elétrica", itens: [
-                        "Testar TODAS as tomadas com o carregador de celular",
-                        "Testar TODOS os interruptores",
-                        "Verificar se os espelhos (placas) das tomadas e interruptores estão bem fixados e alinhados",
-                        "Verificar se há pontos de TV e internet previstos no memorial",
-                        "Verificar se o ponto de ar-condicionado está previsto e acessível"
-                    ]},
-                    { titulo: "Teto", itens: [
-                        "Verificar se há manchas de infiltração no teto",
-                        "Verificar se o teto está nivelado",
-                        "Verificar se há pontos de iluminação previstos",
-                        "Verificar se há sancas ou rebaixos conforme o memorial"
-                    ]}
-                ]
-            },
-            cozinha: {
-                label: "Cozinha",
-                sections: [
-                    { titulo: "Hidráulica", itens: [
-                        "Abrir a torneira da pia por 1-2 minutos e verificar vazamentos na base e nas conexões",
-                        "Verificar se o escoamento da pia é rápido e não empoça água",
-                        "Verificar se há ponto de água para a máquina de lavar (se previsto)",
-                        "Verificar se há ponto de esgoto para a máquina de lavar (se previsto)",
-                        "Verificar se há ponto de filtro de água (se previsto)",
-                        "Verificar se há registro de gaveta acessível"
-                    ]},
-                    { titulo: "Elétrica", itens: [
-                        "Testar TODAS as tomadas (inclusive a da geladeira, forno, micro-ondas e coifa)",
-                        "Testar TODOS os interruptores",
-                        "Verificar se há tomadas na bancada em quantidade suficiente",
-                        "Verificar se o ponto de iluminação geral funciona",
-                        "Verificar se há ponto de iluminação sob os armários (se previsto)"
-                    ]},
-                    { titulo: "Pisos, Paredes e Teto", itens: [
-                        "Bater nas paredes revestidas e verificar se há som oco (peça descolada)",
-                        "Verificar se há trincas nos revestimentos",
-                        "Verificar se o piso está nivelado",
-                        "Verificar se há manchas no teto",
-                        "Verificar se o rejunte está completo e sem falhas"
-                    ]},
-                    { titulo: "Bancada e Armários", itens: [
-                        "Verificar se a bancada está bem fixada e sem trincas",
-                        "Verificar se há espaço para a geladeira conforme o memorial",
-                        "Verificar se há espaço para o fogão/cooktop",
-                        "Verificar se há espaço para a coifa"
-                    ]}
-                ]
-            },
-            lavanderia: {
-                label: "Área de Serviço / Lavanderia",
-                sections: [
-                    { titulo: "Hidráulica", itens: [
-                        "Abrir a torneira do tanque e verificar vazamentos",
-                        "Verificar se o escoamento do tanque é rápido",
-                        "Verificar se há ponto de água para a máquina de lavar",
-                        "Verificar se há ponto de esgoto para a máquina de lavar",
-                        "Verificar se há registro acessível"
-                    ]},
-                    { titulo: "Elétrica", itens: [
-                        "Testar a tomada da máquina de lavar (com DR, se for o caso)",
-                        "Testar a tomada da secadora (se previsto)",
-                        "Testar TODOS os interruptores",
-                        "Verificar se há ponto de iluminação funcionando"
-                    ]},
-                    { titulo: "Estrutural", itens: [
-                        "Verificar se há ventilação adequada (janela ou exaustão)",
-                        "Verificar se há ponto para varal",
-                        "Verificar se o piso está impermeabilizado e com caimento para o ralo",
-                        "Verificar se há som oco nas paredes revestidas",
-                        "Verificar se o ralo escoa bem e não tem odores"
-                    ]}
-                ]
-            },
-            banheiro: {
-                label: "Banheiro / Lavabo",
-                sections: [
-                    { titulo: "Hidráulica", itens: [
-                        "Abrir a torneira do lavatório e verificar vazamentos",
-                        "Abrir o chuveiro por 1-2 minutos e verificar vazamentos",
-                        "Dar descarga e verificar se o fluxo é forte e não há retorno de odores",
-                        "Verificar se o escoamento do box é rápido e não empoça água",
-                        "Verificar se o ralo fora do box escoa bem",
-                        "Verificar se há registro de gaveta acessível"
-                    ]},
-                    { titulo: "Rejuntes e Revestimentos", itens: [
-                        "Bater levemente nos azulejos e verificar se há som oco (peça descolada)",
-                        "Verificar se o rejunte está completo e sem falhas",
-                        "Verificar se há trincas nos revestimentos",
-                        "Verificar se há manchas de umidade"
-                    ]},
-                    { titulo: "Louças e Metais", itens: [
-                        "Verificar se o vaso sanitário está bem fixado e sem folgas",
-                        "Verificar se a cuba/lavatório está bem fixada",
-                        "Verificar se as torneiras não estão frouxas ou manchadas",
-                        "Verificar se o chuveiro/ducha está bem fixado",
-                        "Verificar se o box está instalado corretamente (ou previsto)"
-                    ]},
-                    { titulo: "Porta e Elétrica", itens: [
-                        "Abrir e fechar a porta, verificando se não está emperrando",
-                        "Testar a tomada do lavatório (com DR)",
-                        "Testar o interruptor",
-                        "Verificar se há ponto de exaustão/ventilação",
-                        "Verificar se há ponto de iluminação funcionando"
-                    ]},
-                    { titulo: "Impermeabilização", itens: [
-                        "Verificar se o piso do box está impermeabilizado",
-                        "Verificar se as paredes do box estão impermeabilizadas até a altura prevista"
-                    ]}
-                ]
-            },
-            quarto: {
-                label: "Quarto / Suíte",
-                sections: [
-                    { titulo: "Pisos e Paredes", itens: [
-                        "Caminhar por todo o piso e verificar se há peças soltas, desníveis ou som oco",
-                        "Verificar se há trincas, rachaduras ou manchas nas paredes",
-                        "Passar a mão nas paredes para sentir irregularidades na pintura",
-                        "Verificar se os rodapés estão bem fixados",
-                        "Verificar se o piso está nivelado com o corredor (soleira)"
-                    ]},
-                    { titulo: "Esquadrias e Portas", itens: [
-                        "Abrir e fechar a porta, verificando se desliza suavemente e se o trinco encaixa",
-                        "Abrir e fechar as janelas, verificando se deslizam suavemente",
-                        "Verificar se os vidros não estão trincados",
-                        "Verificar se as borrachas de vedação das janelas estão íntegras"
-                    ]},
-                    { titulo: "Elétrica", itens: [
-                        "Testar TODAS as tomadas (inclusive as das cabeceiras)",
-                        "Testar TODOS os interruptores",
-                        "Verificar se há ponto de TV (se previsto)",
-                        "Verificar se há ponto de ar-condicionado (se previsto)",
-                        "Verificar se há ponto de iluminação nas cabeceiras (se previsto)"
-                    ]},
-                    { titulo: "Teto", itens: [
-                        "Verificar se há manchas de infiltração no teto",
-                        "Verificar se o teto está nivelado",
-                        "Verificar se há pontos de iluminação funcionando"
-                    ]}
-                ]
-            },
-            varanda: {
-                label: "Varanda / Sacada",
-                sections: [
-                    { titulo: "Estrutural", itens: [
-                        "Verificar a altura e a fixação do guarda-corpo",
-                        "Verificar se o piso da varanda tem o desnível correto em relação ao interior",
-                        "Verificar se o ralo de escoamento está desobstruído e escoa bem",
-                        "Verificar se a laje para condensadora está prevista e acessível (se aplicável)"
-                    ]},
-                    { titulo: "Hidráulica e Gás", itens: [
-                        "Verificar se há ponto de água (se for gourmet)",
-                        "Verificar se há ponto de esgoto (se for gourmet)",
-                        "Verificar se há ponto de gás (se for churrasqueira)",
-                        "Verificar se há registro acessível"
-                    ]},
-                    { titulo: "Elétrica", itens: [
-                        "Testar as tomadas (com DR, se área molhada)",
-                        "Testar o interruptor",
-                        "Verificar se há ponto de iluminação funcionando"
-                    ]},
-                    { titulo: "Regras do Condomínio", itens: [
-                        "Confirmar com a construtora se o fechamento é permitido",
-                        "Confirmar se alterações de fachada são permitidas",
-                        "Confirmar regras para churrasqueira / gourmet"
-                    ]}
-                ]
-            },
-            hall: {
-                label: "Hall / Corredor",
-                sections: [
-                    { titulo: "Pisos e Paredes", itens: [
-                        "Caminhar por todo o piso e verificar se há peças soltas, desníveis ou som oco",
-                        "Verificar se há trincas ou manchas nas paredes",
-                        "Verificar se os rodapés estão bem fixados",
-                        "Verificar se há soleiras nos acessos aos ambientes"
-                    ]},
-                    { titulo: "Elétrica", itens: [
-                        "Testar TODAS as tomadas",
-                        "Testar TODOS os interruptores (inclusive os de passagem, se houver)",
-                        "Verificar se há ponto de iluminação funcionando"
-                    ]},
-                    { titulo: "Portas", itens: [
-                        "Abrir e fechar todas as portas dos ambientes",
-                        "Verificar se as portas não estão emperrando",
-                        "Verificar se os trincos encaixam bem"
-                    ]}
-                ]
-            }
-        }
-    };
-},
-
-renderVistoriaPage() {
-    this.renderVistoriaPreparacao();
-    this.renderVistoriaAmbientes();
-    this.renderVistoriaPendencias();
-},
-
-renderVistoriaPreparacao() {
-    const container = document.getElementById('vist-prep-list');
-    if (!container) return;
-    const prep = this.data.vistoria.preparacao || {};
-    const config = this.getChecklistVistoria().preparacao;
-    let html = '';
-    config.itens.forEach((item, idx) => {
-        const done = prep[idx] === true;
-        html += `
-            <div class="vist-prep-item ${done ? 'done' : ''}">
-                <input type="checkbox" id="prep_${idx}" ${done ? 'checked' : ''} onchange="app.vistTogglePreparacao(${idx}, this.checked)">
-                <label for="prep_${idx}">${item}</label>
-            </div>
-        `;
-    });
-    container.innerHTML = html;
-},
-
-vistTogglePreparacao(idx, checked) {
-    if (!this.data.vistoria.preparacao) this.data.vistoria.preparacao = {};
-    this.data.vistoria.preparacao[idx] = checked;
-    this.saveLocal(); this.syncToFirebase();
-    this.renderVistoriaPreparacao();
-    this.haptic('light');
-},
-
-renderVistoriaAmbientes() {
-    const container = document.getElementById('vist-ambientes-list');
-    if (!container) return;
-    const config = this.getChecklistVistoria().ambientes;
-    const ambData = this.data.vistoria.ambientes || {};
-    
-    container.innerHTML = '';
-    Object.keys(config).forEach(tipo => {
-        const cfg = config[tipo];
-        let total = 0, ok = 0, defeito = 0;
-        cfg.sections.forEach(sec => {
-            sec.itens.forEach((item, idx) => {
-                total++;
-                const key = `${tipo}:${sec.titulo}:${idx}`;
-                const st = ambData[key]?.status;
-                if (st === 'ok') ok++;
-                else if (st === 'defeito') defeito++;
-            });
-        });
-        const status = defeito > 0 ? 'parcial' : (ok === total ? 'completo' : 'pendente');
-        const statusLabel = defeito > 0 ? `${defeito} defeito(s)` : (ok === total ? 'Completo' : `${total - ok} pendente(s)`);
-        
-        const div = document.createElement('div');
-        div.className = `list-item vist-amb-card status-${status}`;
-        div.onclick = () => this.openVistoriaAmbiente(tipo);
-        div.innerHTML = `
-            <div class="vist-amb-header">
-                <strong>${cfg.label}</strong>
-                <span class="badge" style="background:${status === 'completo' ? 'rgba(52,199,89,0.15)' : status === 'parcial' ? 'rgba(255,59,48,0.15)' : 'rgba(255,149,0,0.15)'}; color:${status === 'completo' ? '#1E8E3E' : status === 'parcial' ? '#C41E16' : '#B46100'}; font-size:0.7rem;">${statusLabel}</span>
-            </div>
-            <div class="vist-amb-sub">${ok} de ${total} itens verificados</div>
-        `;
-        container.appendChild(div);
-    });
-},
-
-openVistoriaAmbiente(tipo) {
-    this._currentVistTipo = tipo;
-    const config = this.getChecklistVistoria().ambientes[tipo];
-    if (!config) return;
-    const nomeEl = document.getElementById('vist-amb-nome');
-    if (nomeEl) nomeEl.textContent = config.label;
-    
-    // Texto livre geral
-    const obsEl = document.getElementById('vist-amb-obs-geral');
-    if (obsEl) obsEl.value = (this.data.vistoria.obsGeral || {})[tipo] || '';
-    
-    this.renderVistoriaRoteiro(tipo);
-    this.navigate('vistoria-ambiente');
-},
-
-renderVistoriaRoteiro(tipo) {
-    const container = document.getElementById('vist-amb-roteiro');
-    if (!container) return;
-    const config = this.getChecklistVistoria().ambientes[tipo];
-    if (!config) return;
-    const ambData = this.data.vistoria.ambientes || {};
-    
-    let html = '';
-    config.sections.forEach(sec => {
-        html += `<div class="vist-section-title">${sec.titulo}</div>`;
-        sec.itens.forEach((item, idx) => {
-            const key = `${tipo}:${sec.titulo}:${idx}`;
-            const entry = ambData[key] || {};
-            const status = entry.status || null;
-            const obs = entry.obs || '';
-            const fotos = entry.fotos || [];
-            
-            let cls = '';
-            if (status === 'ok') cls = 'status-ok';
-            else if (status === 'defeito') cls = 'status-defeito';
-            else if (status === 'na') cls = 'status-na';
-            
-            html += `
-                <div class="vist-item ${cls}" id="vist-item-${key.replace(/[^a-zA-Z0-9]/g, '_')}">
-                    <div class="vist-item-header">
-                        <span class="vist-item-desc">${item}</span>
-                        <div class="vist-item-actions">
-                            <button class="vist-btn-status ${status === 'ok' ? 'selected-ok' : ''}" onclick="app.vistSetStatus('${key}', 'ok')" title="OK">✓</button>
-                            <button class="vist-btn-status ${status === 'defeito' ? 'selected-defeito' : ''}" onclick="app.vistSetStatus('${key}', 'defeito')" title="Com defeito">✗</button>
-                            <button class="vist-btn-status ${status === 'na' ? 'selected-na' : ''}" onclick="app.vistSetStatus('${key}', 'na')" title="Não se aplica">—</button>
-                        </div>
-                    </div>
-                    <div class="vist-item-detalhe ${status === 'defeito' ? 'active' : ''}" id="vist-det-${key.replace(/[^a-zA-Z0-9]/g, '_')}">
-                        <textarea placeholder="Descreva o defeito..." onchange="app.vistSetObs('${key}', this.value)">${obs}</textarea>
-                        <input type="file" accept="image/*" capture="environment" id="vist-foto-${key.replace(/[^a-zA-Z0-9]/g, '_')}" style="display:none" onchange="app.vistAddFoto('${key}', event)">
-                        <button class="btn btn-secondary" onclick="document.getElementById('vist-foto-${key.replace(/[^a-zA-Z0-9]/g, '_')}').click()" style="padding:8px; font-size:0.8rem; margin-bottom:8px;">📷 Adicionar Foto</button>
-                        <div class="vist-item-foto-preview">
-                            ${fotos.map(f => `<img src="${f}" alt="Foto">`).join('')}
-                        </div>
-                    </div>
-                </div>
-            `;
-        });
-    });
-    container.innerHTML = html;
-},
-
-vistSetStatus(key, status) {
-    if (!this.data.vistoria.ambientes) this.data.vistoria.ambientes = {};
-    if (!this.data.vistoria.ambientes[key]) this.data.vistoria.ambientes[key] = {};
-    this.data.vistoria.ambientes[key].status = status;
-    this.saveLocal(); this.syncToFirebase();
-    this.renderVistoriaRoteiro(this._currentVistTipo);
-    this.renderVistoriaAmbientes();
-    this.renderDashboard();
-    this.haptic('light');
-},
-
-vistSetObs(key, obs) {
-    if (!this.data.vistoria.ambientes) this.data.vistoria.ambientes = {};
-    if (!this.data.vistoria.ambientes[key]) this.data.vistoria.ambientes[key] = {};
-    this.data.vistoria.ambientes[key].obs = obs;
-    this.saveLocal(); this.syncToFirebase();
-},
-
-async vistAddFoto(key, event) {
-    const file = event.target.files[0];
-    if (!file) return;
-    const compressed = await this.compressImage(file, 800, 0.7);
-    if (!this.data.vistoria.ambientes) this.data.vistoria.ambientes = {};
-    if (!this.data.vistoria.ambientes[key]) this.data.vistoria.ambientes[key] = {};
-    if (!this.data.vistoria.ambientes[key].fotos) this.data.vistoria.ambientes[key].fotos = [];
-    this.data.vistoria.ambientes[key].fotos.push(compressed);
-    this.saveLocal(); this.syncToFirebase();
-    this.renderVistoriaRoteiro(this._currentVistTipo);
-    this.renderVistoriaPendencias();
-    event.target.value = '';
-    this.showToast("Foto adicionada", 'success');
-    this.haptic('medium');
-},
-
-vistSalvarObsGeral() {
-    const el = document.getElementById('vist-amb-obs-geral');
-    if (!el || !this._currentVistTipo) return;
-    if (!this.data.vistoria.obsGeral) this.data.vistoria.obsGeral = {};
-    this.data.vistoria.obsGeral[this._currentVistTipo] = el.value;
-    this.saveLocal(); this.syncToFirebase();
-},
-
-renderVistoriaPendencias() {
-    const container = document.getElementById('vist-pendencias-list');
-    if (!container) return;
-    const ambData = this.data.vistoria.ambientes || {};
-    const config = this.getChecklistVistoria().ambientes;
-    
-    const pendencias = [];
-    Object.keys(config).forEach(tipo => {
-        config[tipo].sections.forEach(sec => {
-            sec.itens.forEach((item, idx) => {
-                const key = `${tipo}:${sec.titulo}:${idx}`;
-                const entry = ambData[key];
-                if (entry && entry.status === 'defeito') {
-                    pendencias.push({ tipo, ambienteLabel: config[tipo].label, secao: sec.titulo, descricao: item, obs: entry.obs || '', fotos: entry.fotos || [] });
-                }
-            });
-        });
-    });
-    
-    if (pendencias.length === 0) {
-        container.innerHTML = '<p class="empty-msg">Nenhuma pendência registrada ainda. Marque itens como "Com defeito" para vê-los aqui.</p>';
-        return;
+    #app-header, #bottom-nav, #fab-quick-measure, .toast-container,
+    .modal-overlay, .pin-modal-overlay, .report-actions, .tabs, .search-bar,
+    .filter-bar, .btn, .planta-toolbar, .planta-legend, .planta-actions, .planta-hint {
+        display: none !important;
     }
-    
-    container.innerHTML = '';
-    pendencias.forEach(p => {
-        const div = document.createElement('div');
-        div.className = 'vist-pendencia-card';
-        div.innerHTML = `
-            <div class="vist-pend-amb">${p.ambienteLabel} — ${p.secao}</div>
-            <div class="vist-pend-desc">${p.descricao}</div>
-            ${p.obs ? `<div class="vist-pend-obs">${p.obs}</div>` : ''}
-            ${p.fotos.length > 0 ? `<div class="vist-pend-fotos">${p.fotos.map(f => `<img src="${f}" alt="Foto">`).join('')}</div>` : ''}
-        `;
-        container.appendChild(div);
-    });
-},
-};
-
-window.app = app;
-document.addEventListener('DOMContentLoaded', () => {
-    app.init();
-    setTimeout(() => app.installPlantaGestures(), 100);
-});
+    #view-dashboard, #view-ambientes, #view-ambiente-detalhe, #view-planta,
+    #view-checklist, #view-divergencias, #view-marcenaria, #view-vistoria, #view-vistoria-ambiente {
+        display: none !important;
+    }
+    #view-relatorio { display: block !important; position: static !important; }
+    #app-content {
+        display: block !important; overflow: visible !important; height: auto !important;
+        max-height: none !important; padding: 0 !important; margin: 0 !important;
+        max-width: none !important; width: 100% !important;
+    }
+    .report-paper {
+        display: block !important; background: #fff !important; color: #000 !important;
+        box-shadow: none !important; border-radius: 0 !important; padding: 0 !important;
+        margin: 0 !important; max-width: 100% !important; width: 100% !important;
+    }
+    .report-header { border-bottom: 2px solid #000 !important; padding-bottom: 8pt !important; margin-bottom: 12pt !important; text-align: center !important; page-break-after: avoid; }
+    .report-header h1 { font-size: 16pt !important; color: #000 !important; margin: 0 0 4pt 0 !important; }
+    .report-header p { font-size: 9.5pt !important; color: #333 !important; margin: 2pt 0 !important; line-height: 1.3 !important; }
+    .report-section { margin-bottom: 12pt !important; page-break-inside: auto; }
+    .report-section h2 { font-size: 12pt !important; color: #000 !important; border-left: 3pt solid #007AFF !important; padding-left: 6pt !important; margin: 8pt 0 6pt 0 !important; page-break-after: avoid; }
+    .report-section h3 { font-size: 10.5pt !important; color: #000 !important; margin: 8pt 0 4pt 0 !important; page-break-after: avoid; }
+    .report-ambiente-title { font-size: 13pt !important; color: #000 !important; font-weight: 800 !important; margin: 14pt 0 6pt 0 !important; padding-bottom: 3pt !important; border-bottom: 1pt solid #999 !important; page-break-after: avoid; }
+    .report-table { width: 100% !important; border-collapse: collapse !important; font-size: 9pt !important; margin-bottom: 8pt !important; page-break-inside: auto; }
+    .report-table th, .report-table td { border: 0.5pt solid #999 !important; padding: 4pt 6pt !important; text-align: left !important; color: #000 !important; background: #fff !important; vertical-align: top !important; }
+    .report-table th { background: #f0f0f0 !important; font-weight: 700 !important; font-size: 8.5pt !important; text-transform: uppercase !important; letter-spacing: 0.02em !important; }
+    .report-table tr { page-break-inside: avoid; }
+    .report-table thead { display: table-header-group; }
+    .report-foto-grid { display: grid !important; grid-template-columns: repeat(4, 1fr) !important; gap: 4pt !important; margin: 6pt 0 !important; page-break-inside: avoid; }
+    .report-foto-grid img { width: 100% !important; height: 60pt !important; object-fit: cover !important; border-radius: 3pt !important; border: 0.5pt solid #999 !important; }
+    .report-divergencia-box { background: #FFF5F4 !important; border-left: 3pt solid #FF3B30 !important; padding: 6pt 10pt !important; margin-bottom: 8pt !important; border-radius: 3pt !important; page-break-inside: avoid; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .report-divergencia-box h4 { margin: 0 0 4pt 0 !important; font-size: 10pt !important; color: #C41E16 !important; }
+    .report-divergencia-box p { margin: 2pt 0 !important; font-size: 9pt !important; color: #333 !important; line-height: 1.3 !important; }
+    .report-vist-item { page-break-inside: avoid; }
+    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+}
