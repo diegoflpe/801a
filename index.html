@@ -7,7 +7,7 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Vistoria">
-    <title>Medição e Vistoria - Apt 801 A</title>
+    <title>Medição e Vistoria - Apt 801A</title>
     <link rel="apple-touch-icon" href="icon-192.png">
     <link rel="icon" type="image/png" href="icon-192.png">
     <link rel="manifest" href="manifest.webmanifest">
@@ -15,7 +15,7 @@
 </head>
 <body>
     <header id="app-header">
-        <h1 id="header-title">Love 801 A 💝</h1>
+        <h1 id="header-title">Love 801A 💝</h1>
         <div class="header-right">
             <div class="unsync-dot" id="unsync-dot"></div>
             <div id="save-status" class="status-badge">Salvo localmente</div>
@@ -24,6 +24,7 @@
 
     <main id="app-content">
         
+        <!-- DASHBOARD -->
         <section id="view-dashboard" class="view active">
             <div class="card">
                 <h2>Resumo da Visita</h2>
@@ -43,14 +44,14 @@
                 <div id="dash-amb-grid" class="amb-card-grid"></div>
             </div>
             <div class="card">
-    <h2>Vistoria de Entrega</h2>
-    <ul class="stats-list">
-        <li>Itens verificados: <span id="dash-vist-ok">0</span></li>
-        <li>Com defeito: <span id="dash-vist-defeito" style="color:var(--danger)">0</span></li>
-        <li>Pendentes: <span id="dash-vist-pendente">0</span></li>
-    </ul>
-    <button class="btn btn-primary mt-2" onclick="app.navigate('vistoria')">🔍 Iniciar Vistoria</button>
-</div>
+                <h2>Vistoria de Entrega</h2>
+                <ul class="stats-list">
+                    <li>Verificados: <span id="dash-vist-ok" style="color:var(--success)">0</span></li>
+                    <li>Com defeito: <span id="dash-vist-defeito" style="color:var(--danger)">0</span></li>
+                    <li>Pendentes: <span id="dash-vist-pendente">0</span></li>
+                </ul>
+                <button class="btn btn-primary mt-2" onclick="app.navigate('vistoria')">🔍 Iniciar Vistoria de Entrega</button>
+            </div>
             <div class="card">
                 <h2>Divergências</h2>
                 <ul class="stats-list">
@@ -65,13 +66,16 @@
                 <button class="btn btn-primary" onclick="app.navigate('ambientes')">Ambientes e Paredes</button>
                 <button class="btn btn-secondary" onclick="app.navigate('checklist')">✅ Checklist Geral</button>
                 <button class="btn btn-secondary" onclick="app.navigate('planta')">🗺️ Planta Interativa</button>
-                <button class="btn btn-primary" onclick="app.navigate('vistoria')">🔍 Vistoria de Entrega</button>
                 <button class="btn btn-secondary" onclick="app.navigate('marcenaria')">🛋️ Planejamento de Marcenaria</button>
                 <button class="btn btn-secondary" onclick="app.navigate('relatorio')">📄 Gerar Relatório</button>
                 <button class="btn btn-secondary" onclick="app.exportBackup()">💾 Exportar Backup JSON</button>
+                <p class="hint-text" style="margin-top:12px; font-size:0.72rem; text-align:center;">
+                    📱 Planta e fotos ficam apenas neste dispositivo. Para usar em outro aparelho, use o Backup JSON.
+                </p>
             </div>
         </section>
 
+        <!-- AMBIENTES -->
         <section id="view-ambientes" class="view">
             <h2>Ambientes</h2>
             <div class="search-bar">
@@ -82,6 +86,7 @@
             <button class="btn btn-primary" onclick="app.addAmbiente()">+ Adicionar Ambiente</button>
         </section>
 
+        <!-- DETALHE DO AMBIENTE -->
         <section id="view-ambiente-detalhe" class="view">
             <button class="btn btn-back" onclick="app.navigate('ambientes')">← Voltar para Ambientes</button>
             <h2 id="amb-nome" class="page-title">Nome do Ambiente</h2>
@@ -185,12 +190,12 @@
                 </div>
             </div>
 
-            <!-- NOVA ABA: CHECKLIST CONTEXTUAL -->
             <div id="tab-checklist-ctx" class="tab-content">
                 <div id="ctx-checklist-container" class="list-container"></div>
             </div>
         </section>
 
+        <!-- PLANTA -->
         <section id="view-planta" class="view">
             <div class="planta-header-bar">
                 <h2>Planta Baixa</h2>
@@ -228,6 +233,7 @@
             </div>
         </section>
 
+        <!-- CHECKLIST GERAL -->
         <section id="view-checklist" class="view">
             <h2>Checklist Geral</h2>
             <div class="filter-bar">
@@ -241,6 +247,7 @@
             <div id="checklist-items" class="list-container"></div>
         </section>
 
+        <!-- DIVERGÊNCIAS -->
         <section id="view-divergencias" class="view">
             <h2>Divergências</h2>
             <div class="card">
@@ -325,7 +332,7 @@
             <div id="divergencias-list" class="list-container"></div>
         </section>
 
-        <!-- NOVA TELA: MARCENARIA -->
+        <!-- MARCENARIA -->
         <section id="view-marcenaria" class="view">
             <h2>🛋️ Planejamento de Marcenaria</h2>
             <p class="hint-text">Registre móveis e eletrodomésticos para comparar com o espaço medido. O sistema avisa se parecem caber.</p>
@@ -374,52 +381,44 @@
             <h3 class="page-title" style="font-size:1.2rem;">Itens cadastrados (<span id="marc-total">0</span>)</h3>
             <div id="marc-list" class="list-container"></div>
         </section>
-        
+
+        <!-- VISTORIA DE ENTREGA -->
         <section id="view-vistoria" class="view">
-    <h2>🔍 Vistoria de Entrega</h2>
-    <p class="hint-text">Roteiro guiado para inspeção da entrega da obra. Marque cada item, tire fotos e registre observações. No fim, gere o relatório de pendências para a construtora.</p>
+            <h2>🔍 Vistoria de Entrega</h2>
+            <p class="hint-text">Roteiro guiado para inspeção da entrega da obra. Marque cada item, tire fotos e registre observações. No fim, gere o relatório de pendências para a construtora.</p>
+            <div class="card">
+                <h3>📋 Antes de ir — O que levar</h3>
+                <div id="vist-prep-list" class="list-container"></div>
+            </div>
+            <div class="card">
+                <h3>🏠 Ambientes</h3>
+                <p class="hint-text">Toque em um ambiente para abrir o roteiro detalhado.</p>
+                <div id="vist-ambientes-list" class="list-container"></div>
+            </div>
+            <div class="card">
+                <h3>⚠️ Pendências Registradas</h3>
+                <p class="hint-text">Itens marcados como "Com Defeito" em todos os ambientes.</p>
+                <div id="vist-pendencias-list" class="list-container"></div>
+            </div>
+            <button class="btn btn-primary" onclick="app.navigate('relatorio')">📄 Gerar Relatório Completo</button>
+        </section>
 
-    <!-- CHECKLIST DE PREPARAÇÃO -->
-    <div class="card">
-        <h3>📋 Antes de ir — O que levar</h3>
-        <div id="vist-prep-list" class="list-container"></div>
-    </div>
+        <!-- ROTEIRO DE UM AMBIENTE DA VISTORIA -->
+        <section id="view-vistoria-ambiente" class="view">
+            <button class="btn btn-back" onclick="app.navigate('vistoria')">← Voltar para Vistoria</button>
+            <h2 id="vist-amb-nome" class="page-title">Ambiente</h2>
+            <div id="vist-amb-roteiro" class="list-container"></div>
+            <div-btn class="card">
+                <"h3>📝 Observações Gerais deste Ambiente data</h3>
+                <div class="input-group">
+                   -type <label>Texto livre (="qualquer coisa que não esteja no checklistport)</label>
+                    <textarea id="vist-amb-obs-geral" rows="3" placeholder="Ex: Encontrei uma mancha de umidade no canto superior direito..." onchange="app.vistSalvarObsGeral()"></textarea>
+                </div>
+            </div>
+            <button class="btn btn-primary" onclick="app.navigate('vistoria')">✅ Concluir este Ambiente</button>
+        </section>
 
-    <!-- AMBIENTES -->
-    <div class="card">
-        <h3>🏠 Ambientes</h3>
-        <p class="hint-text">Toque em um ambiente para abrir o roteiro detalhado.</p>
-        <div id="vist-ambientes-list" class="list-container"></div>
-    </div>
-
-    <!-- RESUMO DE PENDÊNCIAS -->
-    <div class="card">
-        <h3>⚠️ Pendências Registradas</h3>
-        <p class="hint-text">Itens marcados como "Com Defeito" em todos os ambientes.</p>
-        <div id="vist-pendencias-list" class="list-container"></div>
-    </div>
-
-    <button class="btn btn-primary" onclick="app.navigate('relatorio')">📄 Gerar Relatório Completo</button>
-</section>
-
-<!-- TELA: Roteiro de um Ambiente Específico -->
-<section id="view-vistoria-ambiente" class="view">
-    <button class="btn btn-back" onclick="app.navigate('vistoria')">← Voltar para Vistoria</button>
-    <h2 id="vist-amb-nome" class="page-title">Ambiente</h2>
-
-    <div id="vist-amb-roteiro" class="list-container"></div>
-
-    <div class="card">
-        <h3>📝 Observações Gerais deste Ambiente</h3>
-        <div class="input-group">
-            <label>Texto livre (qualquer coisa que não esteja no checklist)</label>
-            <textarea id="vist-amb-obs-geral" rows="3" placeholder="Ex: Encontrei uma mancha de umidade no canto superior direito..." onchange="app.vistSalvarObsGeral()"></textarea>
-        </div>
-    </div>
-
-    <button class="btn btn-primary" onclick="app.navigate('vistoria')">✅ Concluir este Ambiente</button>
-</section>
-
+        <!-- RELATÓRIO -->
         <section id="view-relatorio" class="view">
             <h2>Relatório de Vistoria</h2>
             <div class="report-actions">
@@ -433,8 +432,7 @@
     </main>
 
     <button id="fab-quick-measure" onclick="app.openQuickMeasure()" aria-label="Medição Rápida">
-        ⚡
-        <span class="fab-label">Medir</span>
+        ⚡<span class="fab-label">Medir</span>
     </button>
 
     <div id="quick-measure-modal" class="modal-overlay">
@@ -449,7 +447,7 @@
                 <div class="qm-type-grid" id="qm-type-grid">
                     <button class="qm-type-btn" data-type="parede">📏 Parede</button>
                     <button class="qm-type-btn" data-type="janela">🪟 Janela</button>
-                    <button class="qm-type-btn" data-type="porta">🚪 Porta</button>
+                    <button class="qm-typea">🚪 Porta</button>
                     <button class="qm-type-btn" data-type="tomada">🔌 Tomada</button>
                     <button class="qm-type-btn" data-type="interruptor">💡 Interruptor</button>
                     <button class="qm-type-btn" data-type="ponto_hidraulico">🚰 Hidráulica</button>
@@ -492,30 +490,19 @@
 
     <nav id="bottom-nav">
         <button class="nav-btn active" onclick="app.navigate('dashboard')" data-tab="dashboard">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>
-            </svg><span>Início</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg><span>Início</span>
         </button>
         <button class="nav-btn" onclick="app.navigate('ambientes')" data-tab="ambientes">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M3 3h18v18H3z"/><path d="M9 3v18"/><path d="M3 9h6"/>
-            </svg><span>Ambientes</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h18v18H3z"/><path d="M9 3v18"/><path d="M3 9h6"/></svg><span>Ambientes</span>
         </button>
         <button class="nav-btn" onclick="app.navigate('planta')" data-tab="planta">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-                <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/>
-            </svg><span>Planta</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg><span>Planta</span>
         </button>
         <button class="nav-btn" onclick="app.navigate('marcenaria')" data-tab="marcenaria">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="3" y="7" width="18" height="14" rx="1"/><path d="M3 12h18"/><path d="M9 7v14"/>
-            </svg><span>Marcenaria</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="14" rx="1"/><path d="M3 12h18"/><path d="M9 7v14"/></svg><span>Marcenaria</span>
         </button>
         <button class="nav-btn" onclick="app.navigate('relatorio')" data-tab="relatorio">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
-                <line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>
-            </svg><span>Relatório</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg><span>Relatório</span>
         </button>
     </nav>
 
