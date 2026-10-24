@@ -272,6 +272,12 @@ const app = {
         lastTouchDist: 0, lastTouchX: 0, lastTouchY: 0,
         isPanning: false, isPinching: false
     },
+    
+    vistoria: {
+    preparacao: {},
+    ambientes: {},
+    obsGeral: {}
+},
 
     async init() {
         this.loadLocalData();
@@ -327,6 +333,7 @@ const app = {
         const saved = localStorage.getItem('vistoriaAppData');
         if (saved) {
             this.data = JSON.parse(saved);
+            if (!this.data.vistoria) this.data.vistoria = { preparacao: {}, ambientes: {}, obsGeral: {} };
             if (!this.data.plantaPins) this.data.plantaPins = [];
             if (!this.data.divergencias) this.data.divergencias = [];
             if (!this.data.marcenaria) this.data.marcenaria = [];
@@ -351,6 +358,7 @@ const app = {
             this.data.plantaPins = [];
             this.data.divergencias = [];
             this.data.marcenaria = [];
+            this.data.vistoria = { preparacao: {}, ambientes: {}, obsGeral: {} };
             this.saveLocal();
         }
     },
@@ -393,6 +401,7 @@ const app = {
         if (viewName === 'relatorio') this.renderRelatorio();
         if (viewName === 'divergencias') this.renderDivergenciasPage();
         if (viewName === 'marcenaria') this.renderMarcenariaPage();
+        if (viewName === 'vistoria') this.renderVistoriaPage();
     },
     switchTab(tabId, event) {
         this.currentTab = tabId;
@@ -471,6 +480,27 @@ const app = {
                 grid.appendChild(mini);
             });
         }
+        
+        // Stats de vistoria
+let vistOk = 0, vistDefeito = 0, vistPendente = 0;
+const VIST_CHECKLIST = this.getChecklistVistoria();
+Object.keys(VIST_CHECKLIST).forEach(tipo => {
+    VIST_CHECKLIST[tipo].sections.forEach(sec => {
+        sec.itens.forEach((item, idx) => {
+            const key = `${tipo}:${sec.titulo}:${idx}`;
+            const st = (this.data.vistoria.ambientes || {})[key]?.status;
+            if (st === 'ok') vistOk++;
+            else if (st === 'defeito') vistDefeito++;
+            else vistPendente++;
+        });
+    });
+});
+const elOk = document.getElementById('dash-vist-ok');
+const elDef = document.getElementById('dash-vist-defeito');
+const elPend = document.getElementById('dash-vist-pendente');
+if (elOk) elOk.textContent = vistOk;
+if (elDef) elDef.textContent = vistDefeito;
+if (elPend) elPend.textContent = vistPendente;
     },
     ambStatus(amb) {
         const hasDim = !!(amb.comp && amb.larg && amb.peDireito);
@@ -1734,6 +1764,447 @@ printReportInNewTab() {
         this.showToast("CSV exportado", 'success');
         this.haptic('medium');
     }
+    
+    // ==========================================================
+// VISTORIA DE ENTREGA
+// ==========================================================
+getChecklistVistoria() {
+    return {
+        preparacao: {
+            label: "Preparação",
+            itens: [
+                "Levar o Memorial Descritivo e as plantas (arquitetura, elétrica e hidráulica)",
+                "Levar carregador de celular para testar todas as tomadas",
+                "Levar régua ou trena para conferir medidas",
+                "Levar cabo de vassoura para bater nos pisos e identificar som oco",
+                "Levar lanterna para olhar dentro de shafts e cantos escuros",
+                "Levar fita crepe ou adesivos para marcar defeitos no local",
+                "Levar celular carregado para fotos",
+                "Agendar a vistoria com a construtora e ter um representante presente",
+                "Verificar se a unidade está com as chaves e a documentação",
+                "Anotar o nome e o cargo do representante da construtora"
+            ]
+        },
+        ambientes: {
+            sala: {
+                label: "Sala / Estar / Jantar",
+                sections: [
+                    { titulo: "Pisos e Paredes", itens: [
+                        "Caminhar por todo o piso e verificar se há peças soltas, desníveis ou som oco (bater com cabo de vassoura)",
+                        "Verificar se há trincas, rachaduras ou manchas nas paredes",
+                        "Passar a mão nas paredes para sentir irregularidades na pintura",
+                        "Verificar se os rodapés estão bem fixados e sem falhas",
+                        "Verificar se o piso está nivelado com o piso dos ambientes vizinhos (soleiras)"
+                    ]},
+                    { titulo: "Esquadrias e Portas", itens: [
+                        "Abrir e fechar a porta de entrada, verificando se desliza suavemente e se o trinco encaixa",
+                        "Verificar se a fechadura funciona bem",
+                        "Abrir e fechar as janelas, verificando se deslizam suavemente",
+                        "Verificar se os vidros não estão trincados ou lascados",
+                        "Verificar se as borrachas de vedação das janelas estão íntegras",
+                        "Verificar se há folgas entre a esquadria e a parede"
+                    ]},
+                    { titulo: "Elétrica", itens: [
+                        "Testar TODAS as tomadas com o carregador de celular",
+                        "Testar TODOS os interruptores",
+                        "Verificar se os espelhos (placas) das tomadas e interruptores estão bem fixados e alinhados",
+                        "Verificar se há pontos de TV e internet previstos no memorial",
+                        "Verificar se o ponto de ar-condicionado está previsto e acessível"
+                    ]},
+                    { titulo: "Teto", itens: [
+                        "Verificar se há manchas de infiltração no teto",
+                        "Verificar se o teto está nivelado",
+                        "Verificar se há pontos de iluminação previstos",
+                        "Verificar se há sancas ou rebaixos conforme o memorial"
+                    ]}
+                ]
+            },
+            cozinha: {
+                label: "Cozinha",
+                sections: [
+                    { titulo: "Hidráulica", itens: [
+                        "Abrir a torneira da pia por 1-2 minutos e verificar vazamentos na base e nas conexões",
+                        "Verificar se o escoamento da pia é rápido e não empoça água",
+                        "Verificar se há ponto de água para a máquina de lavar (se previsto)",
+                        "Verificar se há ponto de esgoto para a máquina de lavar (se previsto)",
+                        "Verificar se há ponto de filtro de água (se previsto)",
+                        "Verificar se há registro de gaveta acessível"
+                    ]},
+                    { titulo: "Elétrica", itens: [
+                        "Testar TODAS as tomadas (inclusive a da geladeira, forno, micro-ondas e coifa)",
+                        "Testar TODOS os interruptores",
+                        "Verificar se há tomadas na bancada em quantidade suficiente",
+                        "Verificar se o ponto de iluminação geral funciona",
+                        "Verificar se há ponto de iluminação sob os armários (se previsto)"
+                    ]},
+                    { titulo: "Pisos, Paredes e Teto", itens: [
+                        "Bater nas paredes revestidas e verificar se há som oco (peça descolada)",
+                        "Verificar se há trincas nos revestimentos",
+                        "Verificar se o piso está nivelado",
+                        "Verificar se há manchas no teto",
+                        "Verificar se o rejunte está completo e sem falhas"
+                    ]},
+                    { titulo: "Bancada e Armários", itens: [
+                        "Verificar se a bancada está bem fixada e sem trincas",
+                        "Verificar se há espaço para a geladeira conforme o memorial",
+                        "Verificar se há espaço para o fogão/cooktop",
+                        "Verificar se há espaço para a coifa"
+                    ]}
+                ]
+            },
+            lavanderia: {
+                label: "Área de Serviço / Lavanderia",
+                sections: [
+                    { titulo: "Hidráulica", itens: [
+                        "Abrir a torneira do tanque e verificar vazamentos",
+                        "Verificar se o escoamento do tanque é rápido",
+                        "Verificar se há ponto de água para a máquina de lavar",
+                        "Verificar se há ponto de esgoto para a máquina de lavar",
+                        "Verificar se há registro acessível"
+                    ]},
+                    { titulo: "Elétrica", itens: [
+                        "Testar a tomada da máquina de lavar (com DR, se for o caso)",
+                        "Testar a tomada da secadora (se previsto)",
+                        "Testar TODOS os interruptores",
+                        "Verificar se há ponto de iluminação funcionando"
+                    ]},
+                    { titulo: "Estrutural", itens: [
+                        "Verificar se há ventilação adequada (janela ou exaustão)",
+                        "Verificar se há ponto para varal",
+                        "Verificar se o piso está impermeabilizado e com caimento para o ralo",
+                        "Verificar se há som oco nas paredes revestidas",
+                        "Verificar se o ralo escoa bem e não tem odores"
+                    ]}
+                ]
+            },
+            banheiro: {
+                label: "Banheiro / Lavabo",
+                sections: [
+                    { titulo: "Hidráulica", itens: [
+                        "Abrir a torneira do lavatório e verificar vazamentos",
+                        "Abrir o chuveiro por 1-2 minutos e verificar vazamentos",
+                        "Dar descarga e verificar se o fluxo é forte e não há retorno de odores",
+                        "Verificar se o escoamento do box é rápido e não empoça água",
+                        "Verificar se o ralo fora do box escoa bem",
+                        "Verificar se há registro de gaveta acessível"
+                    ]},
+                    { titulo: "Rejuntes e Revestimentos", itens: [
+                        "Bater levemente nos azulejos e verificar se há som oco (peça descolada)",
+                        "Verificar se o rejunte está completo e sem falhas",
+                        "Verificar se há trincas nos revestimentos",
+                        "Verificar se há manchas de umidade"
+                    ]},
+                    { titulo: "Louças e Metais", itens: [
+                        "Verificar se o vaso sanitário está bem fixado e sem folgas",
+                        "Verificar se a cuba/lavatório está bem fixada",
+                        "Verificar se as torneiras não estão frouxas ou manchadas",
+                        "Verificar se o chuveiro/ducha está bem fixado",
+                        "Verificar se o box está instalado corretamente (ou previsto)"
+                    ]},
+                    { titulo: "Porta e Elétrica", itens: [
+                        "Abrir e fechar a porta, verificando se não está emperrando",
+                        "Testar a tomada do lavatório (com DR)",
+                        "Testar o interruptor",
+                        "Verificar se há ponto de exaustão/ventilação",
+                        "Verificar se há ponto de iluminação funcionando"
+                    ]},
+                    { titulo: "Impermeabilização", itens: [
+                        "Verificar se o piso do box está impermeabilizado",
+                        "Verificar se as paredes do box estão impermeabilizadas até a altura prevista"
+                    ]}
+                ]
+            },
+            quarto: {
+                label: "Quarto / Suíte",
+                sections: [
+                    { titulo: "Pisos e Paredes", itens: [
+                        "Caminhar por todo o piso e verificar se há peças soltas, desníveis ou som oco",
+                        "Verificar se há trincas, rachaduras ou manchas nas paredes",
+                        "Passar a mão nas paredes para sentir irregularidades na pintura",
+                        "Verificar se os rodapés estão bem fixados",
+                        "Verificar se o piso está nivelado com o corredor (soleira)"
+                    ]},
+                    { titulo: "Esquadrias e Portas", itens: [
+                        "Abrir e fechar a porta, verificando se desliza suavemente e se o trinco encaixa",
+                        "Abrir e fechar as janelas, verificando se deslizam suavemente",
+                        "Verificar se os vidros não estão trincados",
+                        "Verificar se as borrachas de vedação das janelas estão íntegras"
+                    ]},
+                    { titulo: "Elétrica", itens: [
+                        "Testar TODAS as tomadas (inclusive as das cabeceiras)",
+                        "Testar TODOS os interruptores",
+                        "Verificar se há ponto de TV (se previsto)",
+                        "Verificar se há ponto de ar-condicionado (se previsto)",
+                        "Verificar se há ponto de iluminação nas cabeceiras (se previsto)"
+                    ]},
+                    { titulo: "Teto", itens: [
+                        "Verificar se há manchas de infiltração no teto",
+                        "Verificar se o teto está nivelado",
+                        "Verificar se há pontos de iluminação funcionando"
+                    ]}
+                ]
+            },
+            varanda: {
+                label: "Varanda / Sacada",
+                sections: [
+                    { titulo: "Estrutural", itens: [
+                        "Verificar a altura e a fixação do guarda-corpo",
+                        "Verificar se o piso da varanda tem o desnível correto em relação ao interior",
+                        "Verificar se o ralo de escoamento está desobstruído e escoa bem",
+                        "Verificar se a laje para condensadora está prevista e acessível (se aplicável)"
+                    ]},
+                    { titulo: "Hidráulica e Gás", itens: [
+                        "Verificar se há ponto de água (se for gourmet)",
+                        "Verificar se há ponto de esgoto (se for gourmet)",
+                        "Verificar se há ponto de gás (se for churrasqueira)",
+                        "Verificar se há registro acessível"
+                    ]},
+                    { titulo: "Elétrica", itens: [
+                        "Testar as tomadas (com DR, se área molhada)",
+                        "Testar o interruptor",
+                        "Verificar se há ponto de iluminação funcionando"
+                    ]},
+                    { titulo: "Regras do Condomínio", itens: [
+                        "Confirmar com a construtora se o fechamento é permitido",
+                        "Confirmar se alterações de fachada são permitidas",
+                        "Confirmar regras para churrasqueira / gourmet"
+                    ]}
+                ]
+            },
+            hall: {
+                label: "Hall / Corredor",
+                sections: [
+                    { titulo: "Pisos e Paredes", itens: [
+                        "Caminhar por todo o piso e verificar se há peças soltas, desníveis ou som oco",
+                        "Verificar se há trincas ou manchas nas paredes",
+                        "Verificar se os rodapés estão bem fixados",
+                        "Verificar se há soleiras nos acessos aos ambientes"
+                    ]},
+                    { titulo: "Elétrica", itens: [
+                        "Testar TODAS as tomadas",
+                        "Testar TODOS os interruptores (inclusive os de passagem, se houver)",
+                        "Verificar se há ponto de iluminação funcionando"
+                    ]},
+                    { titulo: "Portas", itens: [
+                        "Abrir e fechar todas as portas dos ambientes",
+                        "Verificar se as portas não estão emperrando",
+                        "Verificar se os trincos encaixam bem"
+                    ]}
+                ]
+            }
+        }
+    };
+},
+
+renderVistoriaPage() {
+    this.renderVistoriaPreparacao();
+    this.renderVistoriaAmbientes();
+    this.renderVistoriaPendencias();
+},
+
+renderVistoriaPreparacao() {
+    const container = document.getElementById('vist-prep-list');
+    if (!container) return;
+    const prep = this.data.vistoria.preparacao || {};
+    const config = this.getChecklistVistoria().preparacao;
+    let html = '';
+    config.itens.forEach((item, idx) => {
+        const done = prep[idx] === true;
+        html += `
+            <div class="vist-prep-item ${done ? 'done' : ''}">
+                <input type="checkbox" id="prep_${idx}" ${done ? 'checked' : ''} onchange="app.vistTogglePreparacao(${idx}, this.checked)">
+                <label for="prep_${idx}">${item}</label>
+            </div>
+        `;
+    });
+    container.innerHTML = html;
+},
+
+vistTogglePreparacao(idx, checked) {
+    if (!this.data.vistoria.preparacao) this.data.vistoria.preparacao = {};
+    this.data.vistoria.preparacao[idx] = checked;
+    this.saveLocal(); this.syncToFirebase();
+    this.renderVistoriaPreparacao();
+    this.haptic('light');
+},
+
+renderVistoriaAmbientes() {
+    const container = document.getElementById('vist-ambientes-list');
+    if (!container) return;
+    const config = this.getChecklistVistoria().ambientes;
+    const ambData = this.data.vistoria.ambientes || {};
+    
+    container.innerHTML = '';
+    Object.keys(config).forEach(tipo => {
+        const cfg = config[tipo];
+        let total = 0, ok = 0, defeito = 0;
+        cfg.sections.forEach(sec => {
+            sec.itens.forEach((item, idx) => {
+                total++;
+                const key = `${tipo}:${sec.titulo}:${idx}`;
+                const st = ambData[key]?.status;
+                if (st === 'ok') ok++;
+                else if (st === 'defeito') defeito++;
+            });
+        });
+        const status = defeito > 0 ? 'parcial' : (ok === total ? 'completo' : 'pendente');
+        const statusLabel = defeito > 0 ? `${defeito} defeito(s)` : (ok === total ? 'Completo' : `${total - ok} pendente(s)`);
+        
+        const div = document.createElement('div');
+        div.className = `list-item vist-amb-card status-${status}`;
+        div.onclick = () => this.openVistoriaAmbiente(tipo);
+        div.innerHTML = `
+            <div class="vist-amb-header">
+                <strong>${cfg.label}</strong>
+                <span class="badge" style="background:${status === 'completo' ? 'rgba(52,199,89,0.15)' : status === 'parcial' ? 'rgba(255,59,48,0.15)' : 'rgba(255,149,0,0.15)'}; color:${status === 'completo' ? '#1E8E3E' : status === 'parcial' ? '#C41E16' : '#B46100'}; font-size:0.7rem;">${statusLabel}</span>
+            </div>
+            <div class="vist-amb-sub">${ok} de ${total} itens verificados</div>
+        `;
+        container.appendChild(div);
+    });
+},
+
+openVistoriaAmbiente(tipo) {
+    this._currentVistTipo = tipo;
+    const config = this.getChecklistVistoria().ambientes[tipo];
+    if (!config) return;
+    const nomeEl = document.getElementById('vist-amb-nome');
+    if (nomeEl) nomeEl.textContent = config.label;
+    
+    // Texto livre geral
+    const obsEl = document.getElementById('vist-amb-obs-geral');
+    if (obsEl) obsEl.value = (this.data.vistoria.obsGeral || {})[tipo] || '';
+    
+    this.renderVistoriaRoteiro(tipo);
+    this.navigate('vistoria-ambiente');
+},
+
+renderVistoriaRoteiro(tipo) {
+    const container = document.getElementById('vist-amb-roteiro');
+    if (!container) return;
+    const config = this.getChecklistVistoria().ambientes[tipo];
+    if (!config) return;
+    const ambData = this.data.vistoria.ambientes || {};
+    
+    let html = '';
+    config.sections.forEach(sec => {
+        html += `<div class="vist-section-title">${sec.titulo}</div>`;
+        sec.itens.forEach((item, idx) => {
+            const key = `${tipo}:${sec.titulo}:${idx}`;
+            const entry = ambData[key] || {};
+            const status = entry.status || null;
+            const obs = entry.obs || '';
+            const fotos = entry.fotos || [];
+            
+            let cls = '';
+            if (status === 'ok') cls = 'status-ok';
+            else if (status === 'defeito') cls = 'status-defeito';
+            else if (status === 'na') cls = 'status-na';
+            
+            html += `
+                <div class="vist-item ${cls}" id="vist-item-${key.replace(/[^a-zA-Z0-9]/g, '_')}">
+                    <div class="vist-item-header">
+                        <span class="vist-item-desc">${item}</span>
+                        <div class="vist-item-actions">
+                            <button class="vist-btn-status ${status === 'ok' ? 'selected-ok' : ''}" onclick="app.vistSetStatus('${key}', 'ok')" title="OK">✓</button>
+                            <button class="vist-btn-status ${status === 'defeito' ? 'selected-defeito' : ''}" onclick="app.vistSetStatus('${key}', 'defeito')" title="Com defeito">✗</button>
+                            <button class="vist-btn-status ${status === 'na' ? 'selected-na' : ''}" onclick="app.vistSetStatus('${key}', 'na')" title="Não se aplica">—</button>
+                        </div>
+                    </div>
+                    <div class="vist-item-detalhe ${status === 'defeito' ? 'active' : ''}" id="vist-det-${key.replace(/[^a-zA-Z0-9]/g, '_')}">
+                        <textarea placeholder="Descreva o defeito..." onchange="app.vistSetObs('${key}', this.value)">${obs}</textarea>
+                        <input type="file" accept="image/*" capture="environment" id="vist-foto-${key.replace(/[^a-zA-Z0-9]/g, '_')}" style="display:none" onchange="app.vistAddFoto('${key}', event)">
+                        <button class="btn btn-secondary" onclick="document.getElementById('vist-foto-${key.replace(/[^a-zA-Z0-9]/g, '_')}').click()" style="padding:8px; font-size:0.8rem; margin-bottom:8px;">📷 Adicionar Foto</button>
+                        <div class="vist-item-foto-preview">
+                            ${fotos.map(f => `<img src="${f}" alt="Foto">`).join('')}
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+    });
+    container.innerHTML = html;
+},
+
+vistSetStatus(key, status) {
+    if (!this.data.vistoria.ambientes) this.data.vistoria.ambientes = {};
+    if (!this.data.vistoria.ambientes[key]) this.data.vistoria.ambientes[key] = {};
+    this.data.vistoria.ambientes[key].status = status;
+    this.saveLocal(); this.syncToFirebase();
+    this.renderVistoriaRoteiro(this._currentVistTipo);
+    this.renderVistoriaAmbientes();
+    this.renderDashboard();
+    this.haptic('light');
+},
+
+vistSetObs(key, obs) {
+    if (!this.data.vistoria.ambientes) this.data.vistoria.ambientes = {};
+    if (!this.data.vistoria.ambientes[key]) this.data.vistoria.ambientes[key] = {};
+    this.data.vistoria.ambientes[key].obs = obs;
+    this.saveLocal(); this.syncToFirebase();
+},
+
+async vistAddFoto(key, event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const compressed = await this.compressImage(file, 800, 0.7);
+    if (!this.data.vistoria.ambientes) this.data.vistoria.ambientes = {};
+    if (!this.data.vistoria.ambientes[key]) this.data.vistoria.ambientes[key] = {};
+    if (!this.data.vistoria.ambientes[key].fotos) this.data.vistoria.ambientes[key].fotos = [];
+    this.data.vistoria.ambientes[key].fotos.push(compressed);
+    this.saveLocal(); this.syncToFirebase();
+    this.renderVistoriaRoteiro(this._currentVistTipo);
+    this.renderVistoriaPendencias();
+    event.target.value = '';
+    this.showToast("Foto adicionada", 'success');
+    this.haptic('medium');
+},
+
+vistSalvarObsGeral() {
+    const el = document.getElementById('vist-amb-obs-geral');
+    if (!el || !this._currentVistTipo) return;
+    if (!this.data.vistoria.obsGeral) this.data.vistoria.obsGeral = {};
+    this.data.vistoria.obsGeral[this._currentVistTipo] = el.value;
+    this.saveLocal(); this.syncToFirebase();
+},
+
+renderVistoriaPendencias() {
+    const container = document.getElementById('vist-pendencias-list');
+    if (!container) return;
+    const ambData = this.data.vistoria.ambientes || {};
+    const config = this.getChecklistVistoria().ambientes;
+    
+    const pendencias = [];
+    Object.keys(config).forEach(tipo => {
+        config[tipo].sections.forEach(sec => {
+            sec.itens.forEach((item, idx) => {
+                const key = `${tipo}:${sec.titulo}:${idx}`;
+                const entry = ambData[key];
+                if (entry && entry.status === 'defeito') {
+                    pendencias.push({ tipo, ambienteLabel: config[tipo].label, secao: sec.titulo, descricao: item, obs: entry.obs || '', fotos: entry.fotos || [] });
+                }
+            });
+        });
+    });
+    
+    if (pendencias.length === 0) {
+        container.innerHTML = '<p class="empty-msg">Nenhuma pendência registrada ainda. Marque itens como "Com defeito" para vê-los aqui.</p>';
+        return;
+    }
+    
+    container.innerHTML = '';
+    pendencias.forEach(p => {
+        const div = document.createElement('div');
+        div.className = 'vist-pendencia-card';
+        div.innerHTML = `
+            <div class="vist-pend-amb">${p.ambienteLabel} — ${p.secao}</div>
+            <div class="vist-pend-desc">${p.descricao}</div>
+            ${p.obs ? `<div class="vist-pend-obs">${p.obs}</div>` : ''}
+            ${p.fotos.length > 0 ? `<div class="vist-pend-fotos">${p.fotos.map(f => `<img src="${f}" alt="Foto">`).join('')}</div>` : ''}
+        `;
+        container.appendChild(div);
+    });
+},
 };
 
 window.app = app;
