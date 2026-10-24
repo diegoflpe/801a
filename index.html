@@ -7,7 +7,7 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Vistoria">
-    <title>Medição e Vistoria - Apt 101</title>
+    <title>Medição e Vistoria - Apt 801 A</title>
     <link rel="apple-touch-icon" href="icon-192.png">
     <link rel="icon" type="image/png" href="icon-192.png">
     <link rel="manifest" href="manifest.webmanifest">
@@ -369,6 +369,7 @@
             <h2>Relatório de Vistoria</h2>
             <div class="report-actions">
                 <button class="btn btn-primary" onclick="app.printReport()">🖨️ Imprimir / Salvar PDF</button>
+                <button class="btn btn-secondary" onclick="app.printReportInNewTab()">🖨️ Imprimir em Nova Aba (fallback)</button>
                 <button class="btn btn-secondary" onclick="app.exportCSV()">📊 Exportar CSV (Planilha)</button>
             </div>
             <div id="report-content" class="report-paper"></div>

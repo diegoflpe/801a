@@ -1611,10 +1611,89 @@ const app = {
         container.innerHTML = html;
     },
     printReport() {
-        this.renderRelatorio();
-        setTimeout(() => window.print(), 200);
-        this.haptic('medium');
-    },
+    // 1. Garante que estamos na tela de relatório
+    document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
+    const relView = document.getElementById('view-relatorio');
+    if (relView) relView.classList.add('active');
+    
+    // 2. Renderiza o relatório (caso haja dados novos)
+    this.renderRelatorio();
+    
+    // 3. Força o navegador a recalcular o layout antes de imprimir
+    //    (Safari precisa disso para pegar o CSS @media print corretamente)
+    void document.body.offsetHeight;
+    
+    // 4. Rola para o topo (a prévia começa do topo da página)
+    const main = document.getElementById('app-content');
+    if (main) main.scrollTop = 0;
+    
+    // 5. Abre o diálogo de impressão após o layout estabilizar
+    setTimeout(() => {
+        window.print();
+    }, 300);
+    
+    this.haptic('medium');
+},
+printReportInNewTab() {
+    // Renderiza o HTML do relatório
+    this.renderRelatorio();
+    const reportHtml = document.getElementById('report-content').innerHTML;
+    
+    // Monta uma página limpa com CSS embutido
+    const css = `
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #000; background: #fff; padding: 20px; max-width: 900px; margin: 0 auto; }
+        h1 { font-size: 1.5rem; border-bottom: 2px solid #333; padding-bottom: 10px; text-align: center; }
+        h2 { font-size: 1.1rem; border-left: 4px solid #007AFF; padding-left: 10px; margin-top: 24px; }
+        h3 { font-size: 1rem; margin-top: 16px; }
+        p { font-size: 0.9rem; line-height: 1.4; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-bottom: 12px; }
+        th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; }
+        th { background: #f0f0f0; font-weight: 700; }
+        .report-foto-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 8px 0; }
+        .report-foto-grid img { width: 100%; height: 100px; object-fit: cover; border-radius: 6px; border: 1px solid #ccc; }
+        .report-divergencia-box { background: #FFF5F4; border-left: 4px solid #FF3B30; padding: 12px 16px; margin-bottom: 12px; border-radius: 6px; }
+        .report-divergencia-box h4 { margin: 0 0 6px; color: #C41E16; }
+        .report-ambiente-title { font-size: 1.2rem; font-weight: 800; margin: 24px 0 8px; padding-bottom: 6px; border-bottom: 1px solid #999; }
+        .report-header { text-align: center; margin-bottom: 20px; }
+        .report-header p { margin: 2px 0; color: #555; }
+        @media print {
+            body { padding: 0; max-width: none; }
+            .report-foto-grid { grid-template-columns: repeat(4, 1fr); }
+            .report-foto-grid img { height: 80px; }
+            .report-section { page-break-inside: avoid; }
+            .report-divergencia-box { page-break-inside: avoid; }
+        }
+    `;
+    
+    const fullHtml = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Relatório de Vistoria</title>
+    <style>${css}</style>
+</head>
+<body>${reportHtml}</body>
+</html>`;
+    
+    // Abre em nova aba
+    const win = window.open('', '_blank');
+    if (!win) {
+        this.showToast("Bloqueador de popup impediu. Permita popups neste site.", 'error');
+        return;
+    }
+    win.document.open();
+    win.document.write(fullHtml);
+    win.document.close();
+    
+    // Aguarda as imagens carregarem antes de imprimir
+    win.onload = () => {
+        setTimeout(() => {
+            win.focus();
+            win.print();
+        }, 500);
+    };
+    this.haptic('medium');
+},
     exportCSV() {
         let csv = '\uFEFF';
         csv += 'Ambiente;Tipo;Identificação/Elemento;Largura (m);Altura/Comprimento (m);Peitoril (m);Área (m²)\n';

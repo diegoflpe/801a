@@ -566,26 +566,216 @@ textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 
     .modal-handle { display: none; }
 }
 
-/* Impressão */
+/* ============================================ */
+/* CSS DE IMPRESSÃO — REESCRITO E ISOLADO      */
+/* ============================================ */
 @media print {
-    @page { size: A4; margin: 15mm 12mm; }
-    body { background: #fff !important; height: auto !important; overflow: visible !important; display: block !important; }
-    #app-header, #bottom-nav, .report-actions, .btn, .tabs,
-    #view-dashboard, #view-ambientes, #view-ambiente-detalhe,
-    #view-planta, #view-checklist, #view-divergencias,
-    #fab-quick-measure, .modal-overlay, .toast-container, .pin-modal-overlay {
+    /* Página A4 com margens seguras */
+    @page {
+        size: A4 portrait;
+        margin: 12mm 10mm;
+    }
+
+    /* Reset agressivo para impressão */
+    html, body {
+        background: #fff !important;
+        color: #000 !important;
+        height: auto !important;
+        min-height: 0 !important;
+        overflow: visible !important;
+        display: block !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        font-size: 11pt !important;
+    }
+
+    /* Esconde TUDO que não é relatório */
+    #app-header,
+    #bottom-nav,
+    #fab-quick-measure,
+    .toast-container,
+    .modal-overlay,
+    .pin-modal-overlay,
+    .report-actions,
+    .tabs,
+    .search-bar,
+    .filter-bar,
+    .btn,
+    .planta-toolbar,
+    .planta-legend,
+    .planta-actions,
+    .planta-hint {
         display: none !important;
     }
-    #app-content { overflow: visible !important; height: auto !important; padding: 0 !important; margin: 0 !important; max-width: none !important; }
-    .view { display: none !important; }
-    #view-relatorio.active { display: block !important; }
-    .report-paper { box-shadow: none !important; border-radius: 0 !important; padding: 0 !important; max-width: 100% !important; background: #fff !important; color: #000 !important; }
-    .report-section { page-break-inside: avoid; }
-    .report-ambiente-title { page-break-after: avoid; }
-    .report-table { page-break-inside: auto; }
-    .report-table tr { page-break-inside: avoid; }
-    .report-table thead { display: table-header-group; }
-    .report-divergencia-box { page-break-inside: avoid; }
+
+    /* Esconde todas as views exceto relatório */
+    #view-dashboard,
+    #view-ambientes,
+    #view-ambiente-detalhe,
+    #view-planta,
+    #view-checklist,
+    #view-divergencias,
+    #view-marcenaria {
+        display: none !important;
+    }
+
+    /* Mostra só o relatório */
+    #view-relatorio {
+        display: block !important;
+        position: static !important;
+    }
+
+    /* Remove o container do app-content de suas restrições de scroll */
+    #app-content {
+        display: block !important;
+        overflow: visible !important;
+        height: auto !important;
+        max-height: none !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        max-width: none !important;
+        width: 100% !important;
+    }
+
+    /* O papel vira a página inteira */
+    .report-paper {
+        display: block !important;
+        background: #fff !important;
+        color: #000 !important;
+        box-shadow: none !important;
+        border-radius: 0 !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        max-width: 100% !important;
+        width: 100% !important;
+    }
+
+    /* Cabeçalho do relatório */
+    .report-header {
+        border-bottom: 2px solid #000 !important;
+        padding-bottom: 8pt !important;
+        margin-bottom: 12pt !important;
+        text-align: center !important;
+        page-break-after: avoid;
+    }
+    .report-header h1 {
+        font-size: 16pt !important;
+        color: #000 !important;
+        margin: 0 0 4pt 0 !important;
+    }
+    .report-header p {
+        font-size: 9.5pt !important;
+        color: #333 !important;
+        margin: 2pt 0 !important;
+        line-height: 1.3 !important;
+    }
+
+    /* Seções */
+    .report-section {
+        margin-bottom: 12pt !important;
+        page-break-inside: auto;
+    }
+    .report-section h2 {
+        font-size: 12pt !important;
+        color: #000 !important;
+        border-left: 3pt solid #007AFF !important;
+        padding-left: 6pt !important;
+        margin: 8pt 0 6pt 0 !important;
+        page-break-after: avoid;
+    }
+    .report-section h3 {
+        font-size: 10.5pt !important;
+        color: #000 !important;
+        margin: 8pt 0 4pt 0 !important;
+        page-break-after: avoid;
+    }
+
+    /* Título de ambiente */
+    .report-ambiente-title {
+        font-size: 13pt !important;
+        color: #000 !important;
+        font-weight: 800 !important;
+        margin: 14pt 0 6pt 0 !important;
+        padding-bottom: 3pt !important;
+        border-bottom: 1pt solid #999 !important;
+        page-break-after: avoid;
+    }
+
+    /* Tabelas */
+    .report-table {
+        width: 100% !important;
+        border-collapse: collapse !important;
+        font-size: 9pt !important;
+        margin-bottom: 8pt !important;
+        page-break-inside: auto;
+    }
+    .report-table th,
+    .report-table td {
+        border: 0.5pt solid #999 !important;
+        padding: 4pt 6pt !important;
+        text-align: left !important;
+        color: #000 !important;
+        background: #fff !important;
+        vertical-align: top !important;
+    }
+    .report-table th {
+        background: #f0f0f0 !important;
+        font-weight: 700 !important;
+        font-size: 8.5pt !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.02em !important;
+    }
+    .report-table tr {
+        page-break-inside: avoid;
+    }
+    .report-table thead {
+        display: table-header-group;
+    }
+
+    /* Fotos no relatório */
+    .report-foto-grid {
+        display: grid !important;
+        grid-template-columns: repeat(4, 1fr) !important;
+        gap: 4pt !important;
+        margin: 6pt 0 !important;
+        page-break-inside: avoid;
+    }
+    .report-foto-grid img {
+        width: 100% !important;
+        height: 60pt !important;
+        object-fit: cover !important;
+        border-radius: 3pt !important;
+        border: 0.5pt solid #999 !important;
+    }
+
+    /* Divergências */
+    .report-divergencia-box {
+        background: #FFF5F4 !important;
+        border-left: 3pt solid #FF3B30 !important;
+        padding: 6pt 10pt !important;
+        margin-bottom: 8pt !important;
+        border-radius: 3pt !important;
+        page-break-inside: avoid;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+    .report-divergencia-box h4 {
+        margin: 0 0 4pt 0 !important;
+        font-size: 10pt !important;
+        color: #C41E16 !important;
+    }
+    .report-divergencia-box p {
+        margin: 2pt 0 !important;
+        font-size: 9pt !important;
+        color: #333 !important;
+        line-height: 1.3 !important;
+    }
+
+    /* Força cores de fundo a aparecerem */
+    * {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+    }
 }
 
 /* ============================================ */
