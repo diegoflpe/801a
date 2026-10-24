@@ -43,6 +43,15 @@
                 <div id="dash-amb-grid" class="amb-card-grid"></div>
             </div>
             <div class="card">
+    <h2>Vistoria de Entrega</h2>
+    <ul class="stats-list">
+        <li>Itens verificados: <span id="dash-vist-ok">0</span></li>
+        <li>Com defeito: <span id="dash-vist-defeito" style="color:var(--danger)">0</span></li>
+        <li>Pendentes: <span id="dash-vist-pendente">0</span></li>
+    </ul>
+    <button class="btn btn-primary mt-2" onclick="app.navigate('vistoria')">🔍 Iniciar Vistoria</button>
+</div>
+            <div class="card">
                 <h2>Divergências</h2>
                 <ul class="stats-list">
                     <li>Abertas: <span id="dash-div-abertas" style="color:var(--danger)">0</span></li>
@@ -56,6 +65,7 @@
                 <button class="btn btn-primary" onclick="app.navigate('ambientes')">Ambientes e Paredes</button>
                 <button class="btn btn-secondary" onclick="app.navigate('checklist')">✅ Checklist Geral</button>
                 <button class="btn btn-secondary" onclick="app.navigate('planta')">🗺️ Planta Interativa</button>
+                <button class="btn btn-primary" onclick="app.navigate('vistoria')">🔍 Vistoria de Entrega</button>
                 <button class="btn btn-secondary" onclick="app.navigate('marcenaria')">🛋️ Planejamento de Marcenaria</button>
                 <button class="btn btn-secondary" onclick="app.navigate('relatorio')">📄 Gerar Relatório</button>
                 <button class="btn btn-secondary" onclick="app.exportBackup()">💾 Exportar Backup JSON</button>
@@ -364,6 +374,51 @@
             <h3 class="page-title" style="font-size:1.2rem;">Itens cadastrados (<span id="marc-total">0</span>)</h3>
             <div id="marc-list" class="list-container"></div>
         </section>
+        
+        <section id="view-vistoria" class="view">
+    <h2>🔍 Vistoria de Entrega</h2>
+    <p class="hint-text">Roteiro guiado para inspeção da entrega da obra. Marque cada item, tire fotos e registre observações. No fim, gere o relatório de pendências para a construtora.</p>
+
+    <!-- CHECKLIST DE PREPARAÇÃO -->
+    <div class="card">
+        <h3>📋 Antes de ir — O que levar</h3>
+        <div id="vist-prep-list" class="list-container"></div>
+    </div>
+
+    <!-- AMBIENTES -->
+    <div class="card">
+        <h3>🏠 Ambientes</h3>
+        <p class="hint-text">Toque em um ambiente para abrir o roteiro detalhado.</p>
+        <div id="vist-ambientes-list" class="list-container"></div>
+    </div>
+
+    <!-- RESUMO DE PENDÊNCIAS -->
+    <div class="card">
+        <h3>⚠️ Pendências Registradas</h3>
+        <p class="hint-text">Itens marcados como "Com Defeito" em todos os ambientes.</p>
+        <div id="vist-pendencias-list" class="list-container"></div>
+    </div>
+
+    <button class="btn btn-primary" onclick="app.navigate('relatorio')">📄 Gerar Relatório Completo</button>
+</section>
+
+<!-- TELA: Roteiro de um Ambiente Específico -->
+<section id="view-vistoria-ambiente" class="view">
+    <button class="btn btn-back" onclick="app.navigate('vistoria')">← Voltar para Vistoria</button>
+    <h2 id="vist-amb-nome" class="page-title">Ambiente</h2>
+
+    <div id="vist-amb-roteiro" class="list-container"></div>
+
+    <div class="card">
+        <h3>📝 Observações Gerais deste Ambiente</h3>
+        <div class="input-group">
+            <label>Texto livre (qualquer coisa que não esteja no checklist)</label>
+            <textarea id="vist-amb-obs-geral" rows="3" placeholder="Ex: Encontrei uma mancha de umidade no canto superior direito..." onchange="app.vistSalvarObsGeral()"></textarea>
+        </div>
+    </div>
+
+    <button class="btn btn-primary" onclick="app.navigate('vistoria')">✅ Concluir este Ambiente</button>
+</section>
 
         <section id="view-relatorio" class="view">
             <h2>Relatório de Vistoria</h2>
