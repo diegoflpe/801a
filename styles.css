@@ -70,17 +70,17 @@ body {
 
 #app-header {
     background: var(--header-bg);
-    backdrop-filter: blur(20px) saturate(180%);
-    -webkit-backdrop-filter: blur(20px) saturate(180%);
-    padding: calc(16px + var(--safe-top)) 20px 12px;
+    /* Aumentei o blur e ajustei a transparência para ficar elegante */
+    backdrop-filter: blur(25px) saturate(180%);
+    -webkit-backdrop-filter: blur(25px) saturate(180%);
+    padding: calc(12px + var(--safe-top)) 20px 12px;
     display: flex;
     justify-content: space-between;
     align-items: center;
     border-bottom: 1px solid var(--border);
     position: sticky;
     top: 0;
-    z-index: 10;
-    min-height: 56px;
+    z-index: 100;
 }
 
 #header-title { font-size: 1.15rem; font-weight: 700; letter-spacing: -0.02em; margin: 0; color: var(--text); }
@@ -616,25 +616,63 @@ textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 
 .report-vist-item .vist-item-obs { font-size: 0.8rem; color: var(--text-light); margin-top: 2px; font-style: italic; }
 
 #bottom-nav {
-    position: fixed; bottom: 0; left: 0; right: 0;
+    position: fixed; 
+    bottom: 0; 
+    left: 0; 
+    right: 0;
     background: var(--nav-bg);
-    backdrop-filter: blur(20px) saturate(180%);
-    -webkit-backdrop-filter: blur(20px) saturate(180%);
-    display: flex; justify-content: space-around; align-items: center;
-    padding: 8px 0 calc(8px + var(--safe-bottom));
+    backdrop-filter: blur(25px) saturate(180%);
+    -webkit-backdrop-filter: blur(25px) saturate(180%);
+    display: flex; 
+    justify-content: space-around; 
+    align-items: center;
+    /* O padding-top controla a altura, o padding-bottom garante que não fique atrás do risco do iPhone */
+    padding: 10px 0 calc(10px + var(--safe-bottom));
     border-top: 1px solid var(--border);
-    z-index: 20; min-height: 60px;
+    z-index: 20; 
+    height: auto;
 }
+
 .nav-btn {
-    background: none; border: none; color: var(--text-light);
-    font-size: 0.65rem; font-weight: 600; padding: 6px 8px; cursor: pointer;
-    display: flex; flex-direction: column; align-items: center; gap: 3px;
-    flex: 1; transition: color 0.2s ease; font-family: inherit; min-width: 0;
+    background: none; 
+    border: none; 
+    color: var(--text-light);
+    font-size: 0.65rem; 
+    font-weight: 600; 
+    padding: 4px 8px; 
+    cursor: pointer;
+    display: flex; 
+    flex-direction: column; 
+    align-items: center; 
+    justify-content: center;
+    gap: 4px;
+    flex: 1; 
+    transition: color 0.2s ease; 
+    font-family: inherit; 
+    min-width: 0;
+    /* Garante que a altura seja sempre a mesma para todos */
+    height: 52px; 
 }
-.nav-btn svg { width: 24px; height: 24px; stroke-width: 1.8; }
+
+.nav-btn svg { 
+    width: 24px; 
+    height: 24px; 
+    stroke-width: 1.8; 
+    /* Impede que o SVG mude de tamanho sozinho */
+    flex-shrink: 0; 
+}
+
 .nav-btn.active { color: var(--primary); }
 .nav-btn.active svg { stroke-width: 2.2; }
-.nav-btn span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+
+.nav-btn span { 
+    white-space: nowrap; 
+    overflow: hidden; 
+    text-overflow: ellipsis; 
+    max-width: 100%; 
+    line-height: 1.1; 
+    text-align: center;
+}
 
 .mt-2 { margin-top: 8px; }
 

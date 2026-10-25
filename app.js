@@ -135,8 +135,6 @@ const app = {
     markUnsynced() {
         if (this._isSyncing) return;
         this._unsynced = true;
-        const dot = document.getElementById('unsync-dot');
-        if (dot) dot.classList.add('active');
         this.updateSaveStatus('Não sincronizado', 'unsynced');
     },
 
@@ -194,8 +192,6 @@ const app = {
             
             await setDoc(doc(db, "projetos", this.data.projeto.id), dataToSync, { merge: true });
             this._unsynced = false;
-            const dot = document.getElementById('unsync-dot');
-            if (dot) dot.classList.remove('active');
             this.updateSaveStatus('Sincronizado', 'saved');
         } catch (e) {
             console.error("Erro ao sincronizar:", e);
