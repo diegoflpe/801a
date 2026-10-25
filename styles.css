@@ -694,3 +694,97 @@ textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 
     .report-vist-item { page-break-inside: avoid; }
     * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
 }
+
+/* ============================================ */
+/* CARDS DE AMBIENTE - PREMIUM IOS              */
+/* ============================================ */
+.amb-card-premium {
+    background: var(--bg-elevated);
+    border-radius: 16px;
+    padding: 16px;
+    border: 1px solid var(--border);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    margin-bottom: 12px;
+    cursor: pointer;
+}
+.amb-card-premium:active { 
+    transform: scale(0.98); 
+    box-shadow: 0 2px 8px rgba(0,0,0,0.02);
+}
+
+/* Ícone lateral */
+.amb-icon-box {
+    width: 46px;
+    height: 46px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.4rem;
+    flex-shrink: 0;
+}
+.amb-icon-box.verde { background: rgba(52, 199, 89, 0.12); color: var(--success); }
+.amb-icon-box.amarelo { background: rgba(255, 149, 0, 0.12); color: var(--warning); }
+.amb-icon-box.vermelho { background: rgba(255, 59, 48, 0.12); color: var(--danger); }
+
+/* Conteúdo */
+.amb-info { flex: 1; min-width: 0; }
+.amb-title-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+.amb-title-row strong { font-size: 1.05rem; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.amb-area-badge { font-size: 0.75rem; font-weight: 700; color: var(--primary); background: rgba(0, 122, 255, 0.1); padding: 3px 8px; border-radius: 8px; }
+.amb-details-text { font-size: 0.78rem; color: var(--text-light); font-weight: 500; }
+
+/* Botão de opções (...) */
+.amb-options-btn {
+    background: transparent;
+    border: none;
+    font-size: 1.5rem;
+    color: var(--text-light);
+    padding: 0 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: 4px;
+    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+}
+.amb-options-btn:active { background: rgba(120,120,128,0.1); }
+
+/* Modal de Ações do Ambiente */
+.action-sheet-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.4); backdrop-filter: blur(4px);
+    z-index: 300; display: none; align-items: flex-end; justify-content: center;
+    opacity: 0; transition: opacity 0.2s;
+}
+.action-sheet-overlay.active { display: flex; opacity: 1; }
+.action-sheet {
+    background: var(--bg-elevated);
+    width: 100%; max-width: 500px;
+    border-radius: 24px 24px 0 0;
+    padding: 16px 20px calc(20px + var(--safe-bottom));
+    transform: translateY(100%);
+    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.action-sheet-overlay.active .action-sheet { transform: translateY(0); }
+.action-sheet h3 { margin: 0 0 16px 0; text-align: center; font-size: 1rem; color: var(--text-light); }
+.action-btn {
+    display: flex; align-items: center; gap: 12px;
+    width: 100%; padding: 16px; border: none; background: rgba(120,120,128,0.1);
+    border-radius: 14px; font-size: 1.05rem; font-weight: 600; color: var(--text);
+    margin-bottom: 8px; cursor: pointer; font-family: inherit;
+}
+.action-btn:active { background: rgba(120,120,128,0.2); }
+.action-btn.danger { color: var(--danger); }
+.action-btn.cancel { background: transparent; color: var(--primary); justify-content: center; margin-top: 8px; }
+
+@media (min-width: 768px) {
+    .action-sheet-overlay { align-items: center; }
+    .action-sheet { border-radius: 24px; max-width: 400px; }
+}

@@ -1,6 +1,9 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-import { getFirestore, doc, setDoc, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+import { getFirestore, doc, setDoc, getDoc, onSnapshot, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
+// ==========================================
+// FIREBASE CONFIG (COLOQUE SUAS CHAVES AQUI)
+// ==========================================
 const firebaseConfig = {
   apiKey: "AIzaSyBxhp9c0GHGX0JHEjda9CBmuKTfD0MdQrg",
   authDomain: "measurements-bf85a.firebaseapp.com",
@@ -13,6 +16,9 @@ const firebaseApp = initializeApp(firebaseConfig);
 const db = getFirestore(firebaseApp);
 enableIndexedDbPersistence(db).catch((err) => console.warn("Offline:", err.code));
 
+// ==========================================
+// CHECKLISTS CONTEXTUAIS (Mantidos)
+// ==========================================
 const CHECKLISTS_CONTEXTUAIS = {
     banheiro: { label: "Banheiro / Lavabo", sections: [
         { titulo: "Hidráulica", itens: ["Ponto de água fria do lavatório","Ponto de esgoto do lavatório","Ponto de água fria do vaso","Ponto de esgoto do vaso","Ponto de água fria do chuveiro","Ponto de água quente do chuveiro (se houver)","Registro de gaveta acessível","Ralo sifonado no box","Ralo sifonado fora do box"]},
@@ -67,6 +73,9 @@ function detectTipoAmbiente(nome) {
     return 'generico';
 }
 
+// ==========================================
+// APP
+// ==========================================
 const app = {
     data: {
         projeto: { id: "apto801A", nome: "Love 801A 💝", dataVisita: new Date().toISOString().split('T')[0] },
@@ -85,6 +94,7 @@ const app = {
     qm: { tipo: null, ambienteId: null, paredeId: null, count: 0 },
     div: { fotoTemp: null },
     _unsynced: false,
+    _isSyncing: false, // Evita loop de sincronização
 
     planta: {
         scale: 1, tx: 0, ty: 0, minScale: 0.5, maxScale: 5,
@@ -96,7 +106,12 @@ const app = {
     async init() {
         this.loadLocalData();
         this.renderAll();
-        if (navigator.onLine) await this.syncToFirebase();
+        
+        if (navigator.onLine) {
+            await this.syncFromFirebase(); // Busca inicial
+            this.listenToFirebase();       // Fica escutando em tempo real
+        }
+        
         window.addEventListener('online', () => { this.updateSaveStatus('Sincronizando...', 'syncing'); this.syncToFirebase(); });
         window.addEventListener('offline', () => this.updateSaveStatus('Offline (Salvo local)', 'saved'));
         window.addEventListener('beforeunload', (e) => { if (this._unsynced) { e.preventDefault(); e.returnValue = ''; } });
@@ -118,6 +133,7 @@ const app = {
         }
     },
     markUnsynced() {
+        if (this._isSyncing) return;
         this._unsynced = true;
         const dot = document.getElementById('unsync-dot');
         if (dot) dot.classList.add('active');
@@ -140,6 +156,7 @@ const app = {
             if (!this.data.marcenaria) this.data.marcenaria = [];
             if (!this.data.vistoria) this.data.vistoria = { preparacao: {}, ambientes: {}, obsGeral: {} };
         } else {
+            // Dados iniciais (só roda se não tiver nada salvo)
             this.data.ambientes = [
                 { id: '1', nome: 'Estar/Jantar', comp: 4.26, larg: 2.40, peDireito: null, paredes: [], elementos: [], fotos: [], checklistCtx: {} },
                 { id: '2', nome: 'Cozinha', comp: 4.33, larg: 1.60, peDireito: null, paredes: [], elementos: [], fotos: [], checklistCtx: {} },
@@ -164,14 +181,17 @@ const app = {
             this.saveLocal();
         }
     },
+
     async syncToFirebase() {
-        if (!navigator.onLine) return;
+        if (!navigator.onLine || this._isSyncing) return;
+        this._isSyncing = true;
         this.updateSaveStatus('Sincronizando...', 'syncing');
         try {
             const dataToSync = JSON.parse(JSON.stringify(this.data));
             dataToSync.ambientes.forEach(a => a.fotos = []);
             dataToSync.plantaImagem = null;
             dataToSync.divergencias.forEach(d => d.foto = null);
+            
             await setDoc(doc(db, "projetos", this.data.projeto.id), dataToSync, { merge: true });
             this._unsynced = false;
             const dot = document.getElementById('unsync-dot');
@@ -180,8 +200,69 @@ const app = {
         } catch (e) {
             console.error("Erro ao sincronizar:", e);
             this.updateSaveStatus('Erro nuvem (Salvo local)', 'unsynced');
+        } finally {
+            this._isSyncing = false;
         }
     },
+
+    async syncFromFirebase() {
+        if (!navigator.onLine) return;
+        try {
+            const docRef = doc(db, "projetos", this.data.projeto.id);
+            const docSnap = await getDoc(docRef);
+            
+            if (docSnap.exists()) {
+                this.applyCloudData(docSnap.data(), false);
+            }
+        } catch (e) {
+            console.error("Erro ao baixar da nuvem:", e);
+        }
+    },
+
+    listenToFirebase() {
+        const docRef = doc(db, "projetos", this.data.projeto.id);
+        // O onSnapshot fica ouvindo o banco em tempo real
+        onSnapshot(docRef, (docSnap) => {
+            if (docSnap.exists() && !this._isSyncing) {
+                // Se os dados da nuvem forem diferentes do local, atualiza a tela
+                const dataNuvem = docSnap.data();
+                this.applyCloudData(dataNuvem, true);
+            }
+        });
+    },
+
+    applyCloudData(dataNuvem, showToast = true) {
+        let changed = false;
+        
+        // Mescla as fotos locais (que não vão para a nuvem) com os dados da nuvem
+        if (dataNuvem.ambientes) {
+            dataNuvem.ambientes.forEach(ambNuvem => {
+                const ambLocal = this.data.ambientes.find(a => a.id === ambNuvem.id);
+                if (ambLocal) {
+                    ambNuvem.fotos = ambLocal.fotos || [];
+                } else {
+                    ambNuvem.fotos = [];
+                }
+            });
+            this.data.ambientes = dataNuvem.ambientes;
+            changed = true;
+        }
+        
+        if (dataNuvem.divergencias) { this.data.divergencias = dataNuvem.divergencias; changed = true; }
+        if (dataNuvem.vistoria) { this.data.vistoria = dataNuvem.vistoria; changed = true; }
+        if (dataNuvem.marcenaria) { this.data.marcenaria = dataNuvem.marcenaria; changed = true; }
+        if (dataNuvem.checklist) { this.data.checklist = dataNuvem.checklist; changed = true; }
+        if (dataNuvem.plantaPins) { this.data.plantaPins = dataNuvem.plantaPins; changed = true; }
+
+        if (changed) {
+            localStorage.setItem('vistoriaAppData', JSON.stringify(this.data));
+            this.renderAll();
+            this.updateSaveStatus('Sincronizado', 'saved');
+            
+            if (showToast) this.showToast("Dados atualizados da nuvem", 'success');
+        }
+    },
+
     updateSaveStatus(text, className) {
         const el = document.getElementById('save-status');
         if (el) { el.textContent = text; el.className = `status-badge ${className}`; }
@@ -214,12 +295,6 @@ const app = {
         if (tabId === 'tab-checklist-ctx') this.renderChecklistContextual();
         this.haptic('light');
     },
-    switchTabRelatorio(tabId, event) {
-        this.currentRelatorio = tabId;
-        document.querySelectorAll('#view-relatorio .tab-btn').forEach(el => el.classList.remove('active'));
-        if (event && event.target) event.target.classList.add('active');
-        this.renderRelatorio();
-    },
     switchTabProgrammatic(tabId) {
         document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
         document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
@@ -227,6 +302,12 @@ const app = {
         if (tab) tab.classList.add('active');
         const btn = document.querySelector(`.tab-btn[onclick*="${tabId}"]`);
         if (btn) btn.classList.add('active');
+    },
+    switchTabRelatorio(tabId, event) {
+        this.currentRelatorio = tabId;
+        document.querySelectorAll('#view-relatorio .tab-btn').forEach(el => el.classList.remove('active'));
+        if (event && event.target) event.target.classList.add('active');
+        this.renderRelatorio();
     },
 
     renderAll() {
@@ -236,6 +317,7 @@ const app = {
         const dateEl = document.getElementById('dash-date');
         if (dateEl) dateEl.textContent = this.data.projeto.dataVisita;
     },
+    
     renderDashboard() {
         let totalItens = 0, medidos = 0, totalParedes = 0;
         this.data.ambientes.forEach(amb => {
@@ -304,6 +386,7 @@ const app = {
         if (elDef) elDef.textContent = vistDefeito;
         if (elPend) elPend.textContent = vistPendente;
     },
+    
     ambStatus(amb) {
         const hasDim = !!(amb.comp && amb.larg && amb.peDireito);
         const hasParedes = (amb.paredes?.length || 0) > 0;
@@ -311,27 +394,47 @@ const app = {
         if (hasDim || hasParedes) return 'amarelo';
         return 'vermelho';
     },
-    renderAmbientes() {
+    
+        renderAmbientes() {
         const container = document.getElementById('ambientes-list');
         if (!container) return;
         const searchEl = document.getElementById('amb-search');
         const search = searchEl ? searchEl.value.toLowerCase().trim() : '';
         container.innerHTML = '';
         const filtered = this.data.ambientes.filter(a => !search || a.nome.toLowerCase().includes(search));
-        if (filtered.length === 0) { container.innerHTML = '<p class="empty-msg">Nenhum ambiente encontrado.</p>'; return; }
+        
+        if (filtered.length === 0) { 
+            container.innerHTML = '<p class="empty-msg">Nenhum ambiente encontrado.</p>'; 
+            return; 
+        }
+        
         filtered.forEach(amb => {
-            const area = (amb.comp && amb.larg) ? (amb.comp * amb.larg).toFixed(2) : '?';
+            const area = (amb.comp && amb.larg) ? (amb.comp * amb.larg).toFixed(2) : '--';
             const status = this.ambStatus(amb);
+            const statusIcon = status === 'verde' ? '✓' : status === 'amarelo' ? '⏳' : '!';
+            
             const div = document.createElement('div');
-            div.className = 'list-item';
-            div.style.borderLeft = `4px solid var(--${status === 'verde' ? 'success' : status === 'amarelo' ? 'warning' : 'danger'})`;
+            div.className = 'amb-card-premium';
+            // O clique no card abre a ficha
+            div.onclick = () => this.openAmbiente(amb.id);
+            
             div.innerHTML = `
-                <div class="list-item-header"><strong>${amb.nome}</strong><span class="badge">${area} m²</span></div>
-                <div class="list-item-details">${amb.comp || '?'} x ${amb.larg || '?'} m • ${amb.paredes?.length || 0} paredes • ${amb.elementos?.length || 0} elementos</div>
-                <button class="btn btn-secondary mt-2" onclick="app.openAmbiente('${amb.id}')">Abrir Ficha</button>`;
+                <div class="amb-icon-box ${status}">${statusIcon}</div>
+                <div class="amb-info">
+                    <div class="amb-title-row">
+                        <strong>${amb.nome}</strong>
+                        <span class="amb-area-badge">${area} m²</span>
+                    </div>
+                    <div class="amb-details-text">
+                        ${amb.comp || '?'} x ${amb.larg || '?'} m • ${amb.paredes?.length || 0} paredes
+                    </div>
+                </div>
+                <button class="amb-options-btn" onclick="app.openAmbienteOptions(event, '${amb.id}')">⋮</button>
+            `;
             container.appendChild(div);
         });
     },
+    
     renderChecklist() {
         const container = document.getElementById('checklist-items');
         if (!container) return;
@@ -375,15 +478,87 @@ const app = {
         this.navigate('ambiente-detalhe');
         this.switchTabProgrammatic('tab-geral');
     },
+    
     addAmbiente() {
-        const nome = prompt("Nome do novo ambiente:", "Novo Ambiente");
-        if (!nome) return;
-        this.data.ambientes.push({ id: Date.now().toString(), nome, comp: null, larg: null, peDireito: null, paredes: [], elementos: [], fotos: [], checklistCtx: {} });
+        const nome = prompt("Nome do novo ambiente:", ""); // Deixei vazio
+        if (!nome || nome.trim() === '') return;
+        this.data.ambientes.push({ id: Date.now().toString(), nome: nome.trim(), comp: null, larg: null, peDireito: null, paredes: [], elementos: [], fotos: [], checklistCtx: {} });
         this.saveLocal(); this.syncToFirebase();
         this.renderAmbientes(); this.renderDashboard();
-        this.showToast("Ambiente adicionado", 'success');
-        this.haptic('medium');
+        this.showToast("Ambiente adicionado", 'success'); this.haptic('medium');
     },
+
+        openAmbienteOptions(event, id) {
+        event.stopPropagation(); // Evita que abra a ficha ao clicar nos 3 pontinhos
+        const amb = this.data.ambientes.find(a => a.id === id);
+        if (!amb) return;
+
+        let modal = document.getElementById('amb-options-modal');
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = 'amb-options-modal';
+            modal.className = 'action-sheet-overlay';
+            modal.onclick = (e) => { if (e.target === modal) this.closeAmbienteOptions(); };
+            document.body.appendChild(modal);
+        }
+
+        modal.innerHTML = `
+            <div class="action-sheet">
+                <h3>${amb.nome}</h3>
+                <button class="action-btn" onclick="app.editAmbiente('${amb.id}')">
+                    ✏️ Editar Nome
+                </button>
+                <button class="action-btn danger" onclick="app.deleteAmbiente('${amb.id}')">
+                    🗑️ Excluir Ambiente
+                </button>
+                <button class="action-btn cancel" onclick="app.closeAmbienteOptions()">Cancelar</button>
+            </div>
+        `;
+        modal.classList.add('active');
+        this.haptic('light');
+    },
+
+    closeAmbienteOptions() {
+        const modal = document.getElementById('amb-options-modal');
+        if (modal) modal.classList.remove('active');
+    },
+
+    editAmbiente(id) {
+        this.closeAmbienteOptions();
+        const amb = this.data.ambientes.find(a => a.id === id);
+        if (!amb) return;
+        
+        const novoNome = prompt("Novo nome do ambiente:", amb.nome);
+        if (novoNome && novoNome.trim() !== '') {
+            amb.nome = novoNome.trim();
+            this.saveLocal();
+            this.syncToFirebase();
+            this.renderAmbientes();
+            this.renderDashboard();
+            this.showToast("Nome atualizado", 'success');
+            this.haptic('medium');
+        }
+    },
+
+    deleteAmbiente(id) {
+        this.closeAmbienteOptions();
+        const amb = this.data.ambientes.find(a => a.id === id);
+        if (!amb) return;
+        
+        if (!confirm(`Tem certeza que deseja excluir o ambiente "${amb.nome}"?\n\nTodas as paredes, fotos e elementos dele serão apagados permanentemente.`)) return;
+        
+        this.data.ambientes = this.data.ambientes.filter(a => a.id !== id);
+        // Remove pins associados a este ambiente na planta
+        this.data.plantaPins = this.data.plantaPins.filter(p => p.ambienteId !== id);
+        
+        this.saveLocal();
+        this.syncToFirebase();
+        this.renderAmbientes();
+        this.renderDashboard();
+        this.showToast("Ambiente excluído", 'warning');
+        this.haptic('heavy');
+    },
+    
     saveAmbienteDimensoes() {
         const amb = this.data.ambientes.find(a => a.id === this.currentAmbienteId);
         if (!amb) return;
@@ -392,6 +567,7 @@ const app = {
         amb.peDireito = parseFloat(document.getElementById('amb-pe-direito').value) || null;
         this.calcArea(amb); this.saveLocal(); this.syncToFirebase(); this.haptic('light');
     },
+    
     calcArea(amb) {
         const el = document.getElementById('amb-area-calc');
         if (!el) return;
@@ -407,7 +583,7 @@ const app = {
         const nome = nomeEl.value.trim();
         const comp = parseFloat(compEl.value);
         const alt = parseFloat(altEl.value);
-        if (!nome || !comp || !alt) return this.showToast("Preencha nome, comprimento e altura.", 'warning');
+        if (!nome || !comp || !alt) return this.showToast("Preencha todos os campos.", 'warning');
         const amb = this.data.ambientes.find(a => a.id === this.currentAmbienteId);
         if (!amb) return;
         if (!amb.paredes) amb.paredes = [];
@@ -417,6 +593,7 @@ const app = {
         this.renderParedes(amb); this.populateParedeSelect(amb);
         this.showToast("Parede adicionada", 'success'); this.haptic('medium');
     },
+    
     renderParedes(amb) {
         const container = document.getElementById('paredes-list');
         if (!container) return;
@@ -436,8 +613,9 @@ const app = {
             container.appendChild(div);
         });
     },
+    
     removeParede(id) {
-        if (!confirm("Excluir esta parede? Elementos associados também serão removidos.")) return;
+        if (!confirm("Excluir esta parede?")) return;
         const amb = this.data.ambientes.find(a => a.id === this.currentAmbienteId);
         if (!amb) return;
         amb.paredes = amb.paredes.filter(p => p.id !== id);
@@ -450,9 +628,10 @@ const app = {
     populateParedeSelect(amb) {
         const select = document.getElementById('elem-parede-select');
         if (!select) return;
-        select.innerHTML = '<option value="">Selecione uma parede...</option>';
+        select.innerHTML = '<option value="">Selecione...</option>';
         (amb.paredes || []).forEach(p => { select.innerHTML += `<option value="${p.id}">${p.nome}</option>`; });
     },
+    
     addElemento() {
         const paredeId = document.getElementById('elem-parede-select')?.value;
         const tipo = document.getElementById('elem-tipo')?.value;
@@ -471,11 +650,12 @@ const app = {
         this.renderElementos(amb); this.renderParedes(amb);
         this.showToast("Elemento adicionado", 'success'); this.haptic('medium');
     },
+    
     renderElementos(amb) {
         const container = document.getElementById('elementos-list');
         if (!container) return;
         container.innerHTML = '';
-        if (!amb.elementos || amb.elementos.length === 0) { container.innerHTML = '<p class="empty-msg">Nenhum elemento cadastrado.</p>'; return; }
+        if (!amb.elementos || amb.elementos.length === 0) { container.innerHTML = '<p class="empty-msg">Nenhum elemento.</p>'; return; }
         const tiposFormatados = { janela: '🪟 Janela', porta: '🚪 Porta', tomada: '🔌 Tomada', interruptor: '💡 Interruptor', ponto_hidraulico: '🚰 Hidráulica', ponto_gas: '🔥 Gás', ar_condicionado: '❄️ Ar-Cond.' };
         amb.elementos.forEach(e => {
             const parede = amb.paredes.find(p => p.id === e.paredeId);
@@ -487,6 +667,7 @@ const app = {
             container.appendChild(div);
         });
     },
+    
     removeElemento(id) {
         if (!confirm("Excluir este elemento?")) return;
         const amb = this.data.ambientes.find(a => a.id === this.currentAmbienteId);
@@ -510,6 +691,7 @@ const app = {
         event.target.value = '';
         this.showToast("Foto adicionada", 'success'); this.haptic('medium');
     },
+    
     compressImage(file, maxWidth, quality) {
         return new Promise((resolve) => {
             const reader = new FileReader();
@@ -528,16 +710,19 @@ const app = {
             };
         });
     },
+    
     renderFotos(amb) {
         const container = document.getElementById('fotos-gallery');
         if (!container) return;
         container.innerHTML = '';
         (amb.fotos || []).forEach(foto => { const img = document.createElement('img'); img.src = foto; container.appendChild(img); });
     },
+    
     updateChecklist(id, newStatus) {
         const item = this.data.checklist.find(c => c.id === id);
         if (item) { item.status = newStatus; this.saveLocal(); this.syncToFirebase(); this.renderDashboard(); this.haptic('light'); }
     },
+    
     exportBackup() {
         const dataStr = JSON.stringify(this.data, null, 2);
         const blob = new Blob([dataStr], { type: "application/json" });
@@ -559,7 +744,7 @@ const app = {
         const config = CHECKLISTS_CONTEXTUAIS[tipo];
         if (!amb.checklistCtx) amb.checklistCtx = {};
         const ctx = amb.checklistCtx;
-        let html = `<div class="card"><h3>${config.label}</h3><p class="hint-text">Checklist específico para este tipo de ambiente. Marque o status de cada item.</p></div>`;
+        let html = `<div class="card"><h3>${config.label}</h3></div>`;
         config.sections.forEach(sec => {
             html += `<div class="ctx-section-title">${sec.titulo}</div>`;
             sec.itens.forEach((item, idx) => {
@@ -576,6 +761,7 @@ const app = {
         });
         container.innerHTML = html;
     },
+    
     updateChecklistCtx(key, value) {
         const amb = this.data.ambientes.find(a => a.id === this.currentAmbienteId);
         if (!amb) return;
@@ -589,6 +775,7 @@ const app = {
         if (select) { select.innerHTML = '<option value="">— Selecione —</option>'; this.data.ambientes.forEach(a => { select.innerHTML += `<option value="${a.id}">${a.nome}</option>`; }); }
         this.renderMarcenaria();
     },
+    
     marcSalvar() {
         const ambId = document.getElementById('marc-ambiente').value;
         const nome = document.getElementById('marc-nome').value.trim();
@@ -599,7 +786,7 @@ const app = {
         const modelo = document.getElementById('marc-modelo').value.trim();
         const obs = document.getElementById('marc-obs').value.trim();
         if (!ambId) return this.showToast("Selecione o ambiente.", 'warning');
-        if (!nome) return this.showToast("Informe o nome do móvel.", 'warning');
+        if (!nome) return this.showToast("Informe o nome.", 'warning');
         if (!largura || !profundidade) return this.showToast("Informe largura e profundidade.", 'warning');
         if (!this.data.marcenaria) this.data.marcenaria = [];
         this.data.marcenaria.push({ id: Date.now().toString(), ambienteId: ambId, nome, largura, profundidade, altura: altura || null, folga, modelo, obs, dataRegistro: new Date().toISOString().split('T')[0] });
@@ -608,30 +795,28 @@ const app = {
         this.renderMarcenaria();
         this.showToast("Móvel adicionado", 'success'); this.haptic('medium');
     },
+    
     marcAvaliar(item) {
         const amb = this.data.ambientes.find(a => a.id === item.ambienteId);
         if (!amb) return { status: 'sem-medida', msg: 'Ambiente não encontrado.' };
-        if (!amb.comp || !amb.larg) return { status: 'sem-medida', msg: 'O ambiente ainda não tem medidas registradas.' };
+        if (!amb.comp || !amb.larg) return { status: 'sem-medida', msg: 'O ambiente não tem medidas registradas.' };
         const folgaM = (item.folga || 5) / 100;
         const compDisp = Math.max(amb.comp, amb.larg);
         const largDisp = Math.min(amb.comp, amb.larg);
-        const altDisp = amb.peDireito || null;
         const largNec = item.largura + folgaM;
         const profNec = item.profundidade + folgaM;
-        const cabeLarg = largNec <= largDisp;
-        const cabeProf = profNec <= compDisp;
-        const cabeAlt = item.altura && altDisp ? item.altura <= altDisp : true;
-        if (cabeLarg && cabeProf && cabeAlt) return { status: 'cabe', msg: `✓ Parece caber. Largura disponível: ${largDisp.toFixed(2)} m (necessário ${largNec.toFixed(2)} m). Profundidade: ${compDisp.toFixed(2)} m (necessário ${profNec.toFixed(2)} m).` };
-        if (!cabeLarg && !cabeProf) return { status: 'nao-cabe', msg: `✗ Não cabe. Precisa de ${largNec.toFixed(2)} m x ${profNec.toFixed(2)} m. Este ambiente tem ${largDisp.toFixed(2)} m x ${compDisp.toFixed(2)} m úteis.` };
-        return { status: 'apertado', msg: `⚠ Apertado. ${!cabeLarg ? 'Falta largura. ' : ''}${!cabeProf ? 'Falta profundidade. ' : ''}${!cabeAlt ? 'Altura do móvel excede o pé-direito. ' : ''}Reveja o projeto.` };
+        if (largNec <= largDisp && profNec <= compDisp) return { status: 'cabe', msg: `✓ Parece caber.` };
+        if (largNec > largDisp && profNec > compDisp) return { status: 'nao-cabe', msg: `✗ Não cabe.` };
+        return { status: 'apertado', msg: `⚠ Apertado.` };
     },
+    
     renderMarcenaria() {
         const container = document.getElementById('marc-list');
         const totalEl = document.getElementById('marc-total');
         if (!container) return;
         if (!this.data.marcenaria) this.data.marcenaria = [];
         if (totalEl) totalEl.textContent = this.data.marcenaria.length;
-        if (this.data.marcenaria.length === 0) { container.innerHTML = '<p class="empty-msg">Nenhum móvel cadastrado ainda.</p>'; return; }
+        if (this.data.marcenaria.length === 0) { container.innerHTML = '<p class="empty-msg">Nenhum item.</p>'; return; }
         container.innerHTML = '';
         const sorted = this.data.marcenaria.slice().sort((a, b) => (this.data.ambientes.find(x => x.id === a.ambienteId)?.nome || '').localeCompare(this.data.ambientes.find(x => x.id === b.ambienteId)?.nome || ''));
         let lastAmb = null;
@@ -653,8 +838,9 @@ const app = {
             container.appendChild(card);
         });
     },
+    
     marcExcluir(id) {
-        if (!confirm("Excluir este item?")) return;
+        if (!confirm("Excluir?")) return;
         this.data.marcenaria = this.data.marcenaria.filter(m => m.id !== id);
         this.saveLocal(); this.syncToFirebase();
         this.renderMarcenaria();
@@ -667,7 +853,7 @@ const app = {
         if (ambSelect) { ambSelect.innerHTML = '<option value="">— Selecione —</option>'; this.data.ambientes.forEach(a => { ambSelect.innerHTML += `<option value="${a.id}">${a.nome}</option>`; }); }
         if (filterAmb) {
             const currentVal = filterAmb.value;
-            filterAmb.innerHTML = '<option value="all">Todos os ambientes</option>';
+            filterAmb.innerHTML = '<option value="all">Todos</option>';
             this.data.ambientes.forEach(a => { filterAmb.innerHTML += `<option value="${a.id}">${a.nome}</option>`; });
             filterAmb.value = currentVal || 'all';
         }
@@ -677,6 +863,7 @@ const app = {
         const calcBox = document.getElementById('div-calculo-box'); if (calcBox) calcBox.style.display = 'none';
         this.renderDivergencias();
     },
+    
     divLoadElementos() {
         const ambId = document.getElementById('div-ambiente').value;
         const select = document.getElementById('div-elemento');
@@ -688,13 +875,15 @@ const app = {
         (amb.paredes || []).forEach(p => { select.innerHTML += `<option value="parede:${p.id}">🧱 ${p.nome}</option>`; });
         const tiposLabel = { janela: '🪟 Janela', porta: '🚪 Porta', tomada: '🔌 Tomada', interruptor: '💡 Interruptor', ponto_hidraulico: '🚰 Hidráulica', ponto_gas: '🔥 Gás', ar_condicionado: '❄️ Ar-Cond.' };
         (amb.elementos || []).forEach((e, idx) => { select.innerHTML += `<option value="elem:${e.id}">${tiposLabel[e.tipo] || e.tipo} #${idx+1}</option>`; });
-        select.innerHTML += `<option value="__outro__">✏️ Outro (digitar)</option>`;
+        select.innerHTML += `<option value="__outro__">✏️ Outro</option>`;
     },
+    
     divToggleElementoOutro() {
         const val = document.getElementById('div-elemento').value;
         const group = document.getElementById('div-elemento-outro-group');
         if (group) group.style.display = (val === '__outro__') ? 'block' : 'none';
     },
+    
     divCalcular() {
         const planta = parseFloat(document.getElementById('div-medida-planta').value);
         const real = parseFloat(document.getElementById('div-medida-real').value);
@@ -708,19 +897,19 @@ const app = {
         const pct = (dif / planta) * 100;
         const sinal = dif > 0 ? '+' : '';
         difEl.textContent = `${sinal}${dif.toFixed(3)} m`;
-        difEl.style.color = dif === 0 ? 'var(--success)' : 'var(--danger)';
         pctEl.textContent = `${sinal}${pct.toFixed(2)}%`;
-        pctEl.style.color = dif === 0 ? 'var(--success)' : 'var(--danger)';
     },
+    
     async divFotoUpload(event) {
         const file = event.target.files[0];
         if (!file) return;
         const compressed = await this.compressImage(file, 800, 0.7);
         this.div.fotoTemp = compressed;
         const preview = document.getElementById('div-foto-preview');
-        if (preview) preview.innerHTML = `<img src="${compressed}" alt="Foto da divergência">`;
+        if (preview) preview.innerHTML = `<img src="${compressed}" alt="Foto">`;
         event.target.value = '';
     },
+    
     divSalvar() {
         const ambId = document.getElementById('div-ambiente').value;
         if (!ambId) return this.showToast("Selecione o ambiente.", 'warning');
@@ -740,7 +929,7 @@ const app = {
             const e = amb.elementos.find(x => x.id === eId);
             const tiposLabel = { janela: 'Janela', porta: 'Porta', tomada: 'Tomada', interruptor: 'Interruptor', ponto_hidraulico: 'Hidráulica', ponto_gas: 'Gás', ar_condicionado: 'Ar-Cond.' };
             elementoNome = e ? (tiposLabel[e.tipo] || e.tipo) : 'Elemento';
-        } else { return this.showToast("Selecione o elemento/local.", 'warning'); }
+        } else { return this.showToast("Selecione o elemento.", 'warning'); }
         const planta = parseFloat(document.getElementById('div-medida-planta').value) || null;
         const real = parseFloat(document.getElementById('div-medida-real').value) || null;
         const descricao = document.getElementById('div-descricao').value.trim();
@@ -756,6 +945,7 @@ const app = {
         this.renderDivergencias(); this.renderDashboard(); this.updateDivTotal();
         this.showToast("Divergência registrada", 'success'); this.haptic('heavy');
     },
+    
     divLimparFormulario() {
         ['div-elemento-outro', 'div-medida-planta', 'div-medida-real', 'div-descricao', 'div-pergunta'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
         const sel = document.getElementById('div-elemento'); if (sel) sel.value = '';
@@ -764,10 +954,12 @@ const app = {
         this.div.fotoTemp = null;
         const preview = document.getElementById('div-foto-preview'); if (preview) preview.innerHTML = '';
     },
+    
     updateDivTotal() {
         const el = document.getElementById('div-total');
         if (el) el.textContent = this.data.divergencias.length;
     },
+    
     renderDivergencias() {
         this.updateDivTotal();
         const container = document.getElementById('divergencias-list');
@@ -792,12 +984,12 @@ const app = {
                 <div class="div-header"><div><div class="div-title">${d.elemento}</div><div class="div-sub">${d.ambienteNome} • Prioridade ${prioLabel[d.prioridade]}</div></div><span class="div-status-badge status-${d.status}">${statusLabel[d.status]}</span></div>
                 <div class="div-diff"><span>Planta: <strong>${d.medidaPlanta.toFixed(2)} m</strong></span><span>Real: <strong>${d.medidaReal.toFixed(2)} m</strong></span><span class="div-pct">${sinal}${dif.toFixed(3)} m (${sinal}${pct.toFixed(1)}%)</span></div>
                 ${d.descricao ? `<div class="list-item-details" style="margin-top:6px;"><strong>Descrição:</strong> ${d.descricao}</div>` : ''}
-                ${d.pergunta ? `<div class="list-item-details" style="margin-top:4px;"><strong>Pergunta:</strong> ${d.pergunta}</div>` : ''}
                 ${d.foto ? `<img class="div-foto" src="${d.foto}" alt="Foto">` : ''}
                 <div class="div-actions"><button class="btn-status" onclick="app.divMudarStatus('${d.id}')">Mudar Status</button><button class="btn-delete" onclick="app.divExcluir('${d.id}')">Excluir</button></div>`;
             container.appendChild(card);
         });
     },
+    
     divMudarStatus(id) {
         const d = this.data.divergencias.find(x => x.id === id);
         if (!d) return;
@@ -806,6 +998,7 @@ const app = {
         this.saveLocal(); this.syncToFirebase();
         this.renderDivergencias(); this.renderDashboard(); this.haptic('medium');
     },
+    
     divExcluir(id) {
         if (!confirm("Excluir esta divergência?")) return;
         this.data.divergencias = this.data.divergencias.filter(d => d.id !== id);
@@ -1039,166 +1232,58 @@ const app = {
         this.haptic('light');
     },
 
-        getChecklistVistoria() {
+    getChecklistVistoria() {
         return {
-            preparacao: {
-                label: "Preparação",
-                itens: [
-                    "Levar o Memorial Descritivo e as plantas (arquitetura, elétrica e hidráulica)",
-                    "Levar carregador de celular para testar todas as tomadas",
-                    "Levar régua ou trena para conferir medidas de vãos e soleiras",
-                    "Levar cabo de vassoura para bater nos pisos e identificar som oco",
-                    "Levar lanterna para olhar dentro de shafts, sifões e cantos escuros",
-                    "Levar fita crepe colorida ou adesivos para marcar os defeitos no local",
-                    "Levar um balde ou garrafa de água para testar escoamento de ralos",
-                    "Agendar a vistoria com a construtora e ter um representante presente",
-                    "Verificar se a unidade está com as chaves e a documentação",
-                    "Anotar o nome e o cargo do representante da construtora"
-                ]
-            },
+            preparacao: { label: "Preparação", itens: [
+                "Levar o Memorial Descritivo e as plantas (arquitetura, elétrica e hidráulica)",
+                "Levar carregador de celular para testar todas as tomadas",
+                "Levar régua ou trena para conferir medidas",
+                "Levar cabo de vassoura para bater nos pisos e identificar som oco",
+                "Levar lanterna para olhar dentro de shafts e cantos escuros",
+                "Levar fita crepe ou adesivos para marcar defeitos no local",
+                "Levar celular carregado para fotos",
+                "Agendar a vistoria com a construtora e ter um representante presente",
+                "Verificar se a unidade está com as chaves e a documentação"
+            ]},
             ambientes: {
                 sala: { label: "Sala / Estar / Jantar", sections: [
-                    { titulo: "Pisos, Paredes e Teto", itens: [
-                        "Caminhar por todo o piso e verificar se há peças soltas, desníveis ou som oco (bater com cabo de vassoura)",
-                        "Verificar se há trincas, rachaduras ou manchas nas paredes (inclusive atrás de móveis planejados)",
-                        "Passar a mão nas paredes para sentir irregularidades na pintura ou reboco",
-                        "Verificar se os rodapés estão bem fixados, alinhados e sem falhas na pintura",
-                        "Verificar se o piso está nivelado com o corredor (soleiras)",
-                        "Verificar se há manchas de infiltração no teto",
-                        "Verificar se há sancas ou rebaixos conforme o memorial"
-                    ]},
-                    { titulo: "Esquadrias e Portas", itens: [
-                        "Abrir e fechar a porta de entrada, verificando se desliza suavemente e se o trinco encaixa sem esforço",
-                        "Verificar se a fechadura funciona bem e se as chaves não estão emperrando",
-                        "Abrir e fechar as janelas, verificando se deslizam suavemente nos trilhos",
-                        "Verificar se os vidros não estão trincados, lascados ou com riscos profundos",
-                        "Verificar se as borrachas de vedação das janelas estão íntegras e coladas",
-                        "Verificar se há folgas entre a esquadria e a parede (que podem causar infiltração)"
-                    ]},
-                    { titulo: "Elétrica e Ar-Condicionado", itens: [
-                        "Testar TODAS as tomadas com o carregador de celular (verificar se não estão frouxas)",
-                        "Testar TODOS os interruptores (inclusive os de passagem, se houver)",
-                        "Verificar se os espelhos (placas) das tomadas e interruptores estão bem fixados e alinhados",
-                        "Verificar se há pontos de TV e internet previstos no memorial",
-                        "Verificar se o ponto de ar-condicionado está previsto, acessível e com furação para dreno"
-                    ]}
+                    { titulo: "Pisos e Paredes", itens: ["Caminhar por todo o piso e verificar se há peças soltas, desníveis ou som oco","Verificar se há trincas, rachaduras ou manchas nas paredes","Passar a mão nas paredes para sentir irregularidades na pintura","Verificar se os rodapés estão bem fixados e sem falhas","Verificar se o piso está nivelado com o piso dos ambientes vizinhos (soleiras)"]},
+                    { titulo: "Esquadrias e Portas", itens: ["Abrir e fechar a porta de entrada, verificando se desliza suavemente","Verificar se a fechadura funciona bem","Abrir e fechar as janelas, verificando se deslizam suavemente","Verificar se os vidros não estão trincados ou lascados","Verificar se as borrachas de vedação das janelas estão íntegras"]},
+                    { titulo: "Elétrica", itens: ["Testar TODAS as tomadas com o carregador de celular","Testar TODOS os interruptores","Verificar se os espelhos (placas) das tomadas e interruptores estão bem fixados","Verificar se há pontos de TV e internet previstos no memorial","Verificar se o ponto de ar-condicionado está previsto e acessível"]},
+                    { titulo: "Teto", itens: ["Verificar se há manchas de infiltração no teto","Verificar se o teto está nivelado","Verificar se há pontos de iluminação previstos"]}
                 ]},
                 cozinha: { label: "Cozinha", sections: [
-                    { titulo: "Hidráulica", itens: [
-                        "Abrir a torneira da pia por 1-2 minutos e verificar vazamentos na base e nas conexões",
-                        "Verificar se o escoamento da pia é rápido e não empoça água",
-                        "Verificar se há ponto de água e esgoto para a máquina de lavar (se previsto)",
-                        "Verificar se há ponto de filtro de água (se previsto)",
-                        "Verificar se o registro de gaveta está acessível e funciona"
-                    ]},
-                    { titulo: "Elétrica", itens: [
-                        "Testar TODAS as tomadas (inclusive a da geladeira, forno, micro-ondas e coifa)",
-                        "Testar TODOS os interruptores",
-                        "Verificar se há tomadas na bancada em quantidade suficiente e na altura correta",
-                        "Verificar se há ponto de iluminação sob os armários (se previsto)"
-                    ]},
-                    { titulo: "Pisos, Paredes e Bancada", itens: [
-                        "Bater nas paredes revestidas e verificar se há som oco (peça descolada)",
-                        "Verificar se há trincas nos revestimentos ou falhas no rejunte",
-                        "Verificar se o piso está nivelado e com caimento correto para o ralo",
-                        "Verificar se a bancada está bem fixada, sem trincas e se a cuba está bem vedada",
-                        "Verificar se há espaço para a geladeira, fogão/cooktop e coifa conforme o memorial"
-                    ]}
+                    { titulo: "Hidráulica", itens: ["Abrir a torneira da pia por 1-2 minutos e verificar vazamentos","Verificar se o escoamento da pia é rápido e não empoça água","Verificar se há ponto de água e esgoto para a máquina de lavar (se previsto)","Verificar se há ponto de filtro de água (se previsto)","Verificar se há registro de gaveta acessível"]},
+                    { titulo: "Elétrica", itens: ["Testar TODAS as tomadas (inclusive geladeira, forno, micro-ondas)","Testar TODOS os interruptores","Verificar se há tomadas na bancada em quantidade suficiente","Verificar se há ponto de iluminação sob os armários (se previsto)"]},
+                    { titulo: "Pisos, Paredes e Teto", itens: ["Bater nas paredes revestidas e verificar se há som oco","Verificar se há trincas nos revestimentos","Verificar se o piso está nivelado","Verificar se há manchas no teto","Verificar se o rejunte está completo e sem falhas"]},
+                    { titulo: "Bancada e Armários", itens: ["Verificar se a bancada está bem fixada e sem trincas","Verificar se há espaço para a geladeira conforme o memorial","Verificar se há espaço para o fogão/cooktop","Verificar se há espaço para a coifa"]}
                 ]},
                 lavanderia: { label: "Área de Serviço / Lavanderia", sections: [
-                    { titulo: "Hidráulica", itens: [
-                        "Abrir a torneira do tanque e verificar vazamentos",
-                        "Verificar se o escoamento do tanque é rápido e não empoça",
-                        "Verificar se há ponto de água e esgoto para a máquina de lavar",
-                        "Verificar se há registro acessível"
-                    ]},
-                    { titulo: "Elétrica e Estrutural", itens: [
-                        "Testar a tomada da máquina de lavar (com DR, se for o caso)",
-                        "Testar a tomada da secadora (se previsto)",
-                        "Verificar se há ponto de iluminação funcionando",
-                        "Verificar se há ventilação adequada (janela ou exaustão)",
-                        "Verificar se o piso está impermeabilizado e com caimento para o ralo",
-                        "Verificar se há ponto para varal e se o ralo escoa bem e não tem odores"
-                    ]}
+                    { titulo: "Hidráulica", itens: ["Abrir a torneira do tanque e verificar vazamentos","Verificar se o escoamento do tanque é rápido","Verificar se há ponto de água e esgoto para a máquina de lavar","Verificar se há registro acessível"]},
+                    { titulo: "Elétrica", itens: ["Testar a tomada da máquina de lavar (com DR)","Testar a tomada da secadora (se previsto)","Testar TODOS os interruptores","Verificar se há ponto de iluminação funcionando"]},
+                    { titulo: "Estrutural", itens: ["Verificar se há ventilação adequada (janela ou exaustão)","Verificar se há ponto para varal","Verificar se o piso está impermeabilizado e com caimento para o ralo","Verificar se há som oco nas paredes revestidas","Verificar se o ralo escoa bem e não tem odores"]}
                 ]},
                 banheiro: { label: "Banheiro / Lavabo", sections: [
-                    { titulo: "Hidráulica e Escoamento", itens: [
-                        "Abrir a torneira do lavatório e verificar vazamentos na base e no sifão",
-                        "Abrir o chuveiro por 1-2 minutos e verificar vazamentos e pressão",
-                        "Dar descarga e verificar se o fluxo é forte e não há retorno de odores",
-                        "Jogar um balde de água no box e verificar se escoa rápido para o ralo (sem empoçar)",
-                        "Verificar se o ralo fora do box escoa bem",
-                        "Verificar se há registro de gaveta acessível"
-                    ]},
-                    { titulo: "Rejuntes, Revestimentos e Louças", itens: [
-                        "Bater levemente nos azulejos e verificar se há som oco (peça descolada)",
-                        "Verificar se o rejunte está completo e sem falhas",
-                        "Verificar se há trincas nos revestimentos ou manchas de umidade",
-                        "Verificar se o vaso sanitário está bem fixado e sem folgas",
-                        "Verificar se a cuba/lavatório está bem fixada",
-                        "Verificar se as torneiras não estão frouxas ou manchadas",
-                        "Verificar se o box está instalado corretamente (ou previsto)"
-                    ]},
-                    { titulo: "Porta, Elétrica e Impermeabilização", itens: [
-                        "Abrir e fechar a porta, verificando se não está emperrando e se o trinco encaixa",
-                        "Testar a tomada do lavatório (com DR)",
-                        "Verificar se há ponto de exaustão/ventilação funcionando",
-                        "Verificar se o piso e as paredes do box estão impermeabilizados até a altura prevista"
-                    ]}
+                    { titulo: "Hidráulica", itens: ["Abrir a torneira do lavatório e verificar vazamentos","Abrir o chuveiro por 1-2 minutos e verificar vazamentos","Dar descarga e verificar se o fluxo é forte","Verificar se o escoamento do box é rápido e não empoça água","Verificar se o ralo fora do box escoa bem","Verificar se há registro de gaveta acessível"]},
+                    { titulo: "Rejuntes e Revestimentos", itens: ["Bater levemente nos azulejos e verificar se há som oco","Verificar se o rejunte está completo e sem falhas","Verificar se há trincas nos revestimentos","Verificar se há manchas de umidade"]},
+                    { titulo: "Louças e Metais", itens: ["Verificar se o vaso sanitário está bem fixado e sem folgas","Verificar se a cuba/lavatório está bem fixada","Verificar se as torneiras não estão frouxas ou manchadas","Verificar se o chuveiro/ducha está bem fixado","Verificar se o box está instalado corretamente (ou previsto)"]},
+                    { titulo: "Porta e Elétrica", itens: ["Abrir e fechar a porta, verificando se não está emperrando","Testar a tomada do lavatório (com DR)","Testar o interruptor","Verificar se há ponto de exaustão/ventilação","Verificar se há ponto de iluminação funcionando"]}
                 ]},
                 quarto: { label: "Quarto / Suíte", sections: [
-                    { titulo: "Pisos, Paredes e Teto", itens: [
-                        "Caminhar por todo o piso e verificar se há peças soltas, desníveis ou som oco",
-                        "Verificar se há trincas, rachaduras ou manchas nas paredes",
-                        "Verificar se os rodapés estão bem fixados e alinhados",
-                        "Verificar se o piso está nivelado com o corredor (soleira)",
-                        "Verificar se há manchas de infiltração no teto"
-                    ]},
-                    { titulo: "Esquadrias e Portas", itens: [
-                        "Abrir e fechar a porta, verificando se desliza suavemente e se o trinco encaixa",
-                        "Abrir e fechar as janelas, verificando se deslizam suavemente",
-                        "Verificar se os vidros não estão trincados",
-                        "Verificar se as borrachas de vedação das janelas estão íntegras"
-                    ]},
-                    { titulo: "Elétrica e Ar-Condicionado", itens: [
-                        "Testar TODAS as tomadas (inclusive as das cabeceiras)",
-                        "Testar TODOS os interruptores",
-                        "Verificar se há ponto de TV e internet (se previsto)",
-                        "Verificar se o ponto de ar-condicionado está previsto e com furação para dreno"
-                    ]}
+                    { titulo: "Pisos e Paredes", itens: ["Caminhar por todo o piso e verificar se há peças soltas ou som oco","Verificar se há trincas, rachaduras ou manchas nas paredes","Passar a mão nas paredes para sentir irregularidades na pintura","Verificar se os rodapés estão bem fixados","Verificar se o piso está nivelado com o corredor"]},
+                    { titulo: "Esquadrias e Portas", itens: ["Abrir e fechar a porta, verificando se desliza suavemente","Abrir e fechar as janelas, verificando se deslizam suavemente","Verificar se os vidros não estão trincados","Verificar se as borrachas de vedação das janelas estão íntegras"]},
+                    { titulo: "Elétrica", itens: ["Testar TODAS as tomadas (inclusive as das cabeceiras)","Testar TODOS os interruptores","Verificar se há ponto de TV (se previsto)","Verificar se há ponto de ar-condicionado (se previsto)"]},
+                    { titulo: "Teto", itens: ["Verificar se há manchas de infiltração no teto","Verificar se o teto está nivelado","Verificar se há pontos de iluminação funcionando"]}
                 ]},
                 varanda: { label: "Varanda / Sacada", sections: [
-                    { titulo: "Estrutural e Escoamento", itens: [
-                        "Verificar a altura e a fixação do guarda-corpo (segurança)",
-                        "Verificar se o piso da varanda tem o desnível correto em relação ao interior (para não entrar água)",
-                        "Jogar água no piso e verificar se o ralo de escoamento está desobstruído",
-                        "Verificar se a laje para condensadora está prevista e acessível (se aplicável)"
-                    ]},
-                    { titulo: "Hidráulica, Gás e Elétrica", itens: [
-                        "Verificar se há ponto de água e esgoto (se for gourmet)",
-                        "Verificar se há ponto de gás (se for churrasqueira)",
-                        "Testar as tomadas (com DR, se área molhada)",
-                        "Verificar se há ponto de iluminação funcionando"
-                    ]},
-                    { titulo: "Regras do Condomínio", itens: [
-                        "Confirmar com a construtora se o fechamento é permitido",
-                        "Confirmar se alterações de fachada são permitidas",
-                        "Confirmar regras para churrasqueira / gourmet"
-                    ]}
+                    { titulo: "Estrutural", itens: ["Verificar a altura e a fixação do guarda-corpo","Verificar se o piso da varanda tem o desnível correto em relação ao interior","Verificar se o ralo de escoamento está desobstruído e escoa bem","Verificar se a laje para condensadora está prevista e acessível"]},
+                    { titulo: "Hidráulica e Gás", itens: ["Verificar se há ponto de água (se for gourmet)","Verificar se há ponto de esgoto (se for gourmet)","Verificar se há ponto de gás (se for churrasqueira)","Verificar se há registro acessível"]},
+                    { titulo: "Elétrica", itens: ["Testar as tomadas (com DR, se área molhada)","Testar o interruptor","Verificar se há ponto de iluminação funcionando"]}
                 ]},
                 hall: { label: "Hall / Corredor", sections: [
-                    { titulo: "Pisos, Paredes e Portas", itens: [
-                        "Caminhar por todo o piso e verificar se há peças soltas, desníveis ou som oco",
-                        "Verificar se há trincas ou manchas nas paredes",
-                        "Verificar se os rodapés estão bem fixados",
-                        "Verificar se há soleiras nos acessos aos ambientes",
-                        "Abrir e fechar todas as portas dos ambientes (verificar se não estão emperrando e se os trincos encaixam)"
-                    ]},
-                    { titulo: "Elétrica", itens: [
-                        "Testar TODAS as tomadas",
-                        "Testar TODOS os interruptores (inclusive os de passagem)",
-                        "Verificar se há ponto de iluminação funcionando"
-                    ]}
+                    { titulo: "Pisos e Paredes", itens: ["Caminhar por todo o piso e verificar se há peças soltas","Verificar se há trincas ou manchas nas paredes","Verificar se os rodapés estão bem fixados","Verificar se há soleiras nos acessos aos ambientes"]},
+                    { titulo: "Elétrica", itens: ["Testar TODAS as tomadas","Testar TODOS os interruptores","Verificar se há ponto de iluminação funcionando"]},
+                    { titulo: "Portas", itens: ["Abrir e fechar todas as portas dos ambientes","Verificar se as portas não estão emperrando","Verificar se os trincos encaixam bem"]}
                 ]}
             }
         };
@@ -1209,6 +1294,7 @@ const app = {
         this.renderVistoriaAmbientes();
         this.renderVistoriaPendencias();
     },
+    
     renderVistoriaPreparacao() {
         const container = document.getElementById('vist-prep-list');
         if (!container) return;
@@ -1221,6 +1307,7 @@ const app = {
         });
         container.innerHTML = html;
     },
+    
     vistTogglePreparacao(idx, checked) {
         if (!this.data.vistoria.preparacao) this.data.vistoria.preparacao = {};
         this.data.vistoria.preparacao[idx] = checked;
@@ -1228,6 +1315,7 @@ const app = {
         this.renderVistoriaPreparacao();
         this.haptic('light');
     },
+    
     renderVistoriaAmbientes() {
         const container = document.getElementById('vist-ambientes-list');
         if (!container) return;
@@ -1255,6 +1343,7 @@ const app = {
             container.appendChild(div);
         });
     },
+    
     openVistoriaAmbiente(tipo) {
         this._currentVistTipo = tipo;
         const config = this.getChecklistVistoria().ambientes[tipo];
@@ -1266,6 +1355,7 @@ const app = {
         this.renderVistoriaRoteiro(tipo);
         this.navigate('vistoria-ambiente');
     },
+    
     renderVistoriaRoteiro(tipo) {
         const container = document.getElementById('vist-amb-roteiro');
         if (!container) return;
@@ -1307,6 +1397,7 @@ const app = {
         });
         container.innerHTML = html;
     },
+    
     vistSetStatus(key, status) {
         if (!this.data.vistoria.ambientes) this.data.vistoria.ambientes = {};
         if (!this.data.vistoria.ambientes[key]) this.data.vistoria.ambientes[key] = {};
@@ -1316,48 +1407,14 @@ const app = {
         this.renderVistoriaAmbientes(); this.renderDashboard();
         this.haptic('light');
     },
-
-        vistLimparPreparacao() {
-        if (!confirm("Tem certeza que deseja limpar o checklist de preparação?")) return;
-        this.data.vistoria.preparacao = {};
-        this.saveLocal(); this.syncToFirebase();
-        this.renderVistoriaPreparacao();
-        this.showToast("Checklist limpo", 'success'); this.haptic('heavy');
-    },
-
-    vistLimparRoteiroAmbiente() {
-        if (!this._currentVistTipo) return;
-        if (!confirm("Tem certeza que deseja limpar todos os itens deste ambiente?")) return;
-        
-        const tipo = this._currentVistTipo;
-        const ambData = this.data.vistoria.ambientes || {};
-        
-        // Remove todos os itens que começam com o tipo do ambiente atual
-        Object.keys(ambData).forEach(key => {
-            if (key.startsWith(tipo + ':')) {
-                delete ambData[key];
-            }
-        });
-
-        // Limpa a observação geral do ambiente
-        if (this.data.vistoria.obsGeral) {
-            this.data.vistoria.obsGeral[tipo] = '';
-        }
-        const obsEl = document.getElementById('vist-amb-obs-geral');
-        if (obsEl) obsEl.value = '';
-
-        this.saveLocal(); this.syncToFirebase();
-        this.renderVistoriaRoteiro(tipo);
-        this.renderVistoriaAmbientes();
-        this.renderDashboard();
-        this.showToast("Ambiente limpo", 'success'); this.haptic('heavy');
-    },
+    
     vistSetObs(key, obs) {
         if (!this.data.vistoria.ambientes) this.data.vistoria.ambientes = {};
         if (!this.data.vistoria.ambientes[key]) this.data.vistoria.ambientes[key] = {};
         this.data.vistoria.ambientes[key].obs = obs;
         this.saveLocal(); this.syncToFirebase();
     },
+    
     async vistAddFoto(key, event) {
         const file = event.target.files[0];
         if (!file) return;
@@ -1371,6 +1428,7 @@ const app = {
         event.target.value = '';
         this.showToast("Foto adicionada", 'success'); this.haptic('medium');
     },
+    
     vistSalvarObsGeral() {
         const el = document.getElementById('vist-amb-obs-geral');
         if (!el || !this._currentVistTipo) return;
@@ -1378,6 +1436,7 @@ const app = {
         this.data.vistoria.obsGeral[this._currentVistTipo] = el.value;
         this.saveLocal(); this.syncToFirebase();
     },
+    
     renderVistoriaPendencias() {
         const container = document.getElementById('vist-pendencias-list');
         if (!container) return;
@@ -1404,12 +1463,37 @@ const app = {
             container.appendChild(div);
         });
     },
+    
+    vistLimparPreparacao() {
+        if (!confirm("Tem certeza que deseja limpar o checklist de preparação?")) return;
+        this.data.vistoria.preparacao = {};
+        this.saveLocal(); this.syncToFirebase();
+        this.renderVistoriaPreparacao();
+        this.showToast("Checklist limpo", 'success'); this.haptic('heavy');
+    },
 
-        renderRelatorio() {
+    vistLimparRoteiroAmbiente() {
+        if (!this._currentVistTipo) return;
+        if (!confirm("Tem certeza que deseja limpar todos os itens deste ambiente?")) return;
+        const tipo = this._currentVistTipo;
+        const ambData = this.data.vistoria.ambientes || {};
+        Object.keys(ambData).forEach(key => {
+            if (key.startsWith(tipo + ':')) delete ambData[key];
+        });
+        if (this.data.vistoria.obsGeral) this.data.vistoria.obsGeral[tipo] = '';
+        const obsEl = document.getElementById('vist-amb-obs-geral');
+        if (obsEl) obsEl.value = '';
+        this.saveLocal(); this.syncToFirebase();
+        this.renderVistoriaRoteiro(tipo);
+        this.renderVistoriaAmbientes();
+        this.renderDashboard();
+        this.showToast("Ambiente limpo", 'success'); this.haptic('heavy');
+    },
+
+    renderRelatorio() {
         const container = document.getElementById('report-content');
         if (!container) return;
         const hoje = new Date().toLocaleDateString('pt-BR');
-        
         if (this.currentRelatorio === 'rel-medicao') {
             this.renderRelatorioMedicao(container, hoje);
         } else {
@@ -1421,160 +1505,88 @@ const app = {
         let html = `
             <div class="report-header">
                 <h1>Relatório de Medição e Planejamento</h1>
-                <p><strong>Empreendimento:</strong> ${this.data.projeto.nome} Unidade 801A)</p>
+                <p><strong>Empreendimento:</strong> ${this.data.projeto.nome} Unidade 801A</p>
                 <p><strong>Data da Visita:</strong> ${this.data.projeto.dataVisita} &nbsp;|&nbsp; <strong>Emissão:</strong> ${hoje}</p>
                 <p><strong>Área Total Prevista na Planta:</strong> 55,70 m²</p>
             </div>
         `;
-        
         let totalParedes = 0, totalElementos = 0;
-        this.data.ambientes.forEach(a => {
-            totalParedes += (a.paredes?.length || 0);
-            totalElementos += (a.elementos?.length || 0);
-        });
-
-        html += `
-            <div class="report-section">
-                <h2>Resumo Geral</h2>
-                <table class="report-table">
-                    <tr><th>Ambientes cadastrados</th><td>${this.data.ambientes.length}</td></tr>
-                    <tr><th>Paredes medidas</th><td>${totalParedes}</td></tr>
-                    <tr><th>Elementos registrados (pontos, vãos)</th><td>${totalElementos}</td></tr>
-                    <tr><th>Itens de marcenaria planejados</th><td>${this.data.marcenaria.length}</td></tr>
-                </table>
-            </div>
-        `;
-
-        // Detalhamento de cada ambiente
+        this.data.ambientes.forEach(a => { totalParedes += (a.paredes?.length || 0); totalElementos += (a.elementos?.length || 0); });
+        html += `<div class="report-section"><h2>Resumo Geral</h2><table class="report-table"><tr><th>Ambientes</th><td>${this.data.ambientes.length}</td></tr><tr><th>Paredes</th><td>${totalParedes}</td></tr><tr><th>Elementos/Pontos</th><td>${totalElementos}</td></tr><tr><th>Marcenaria</th><td>${this.data.marcenaria.length}</td></tr></table></div>`;
+        
         this.data.ambientes.forEach(amb => {
             const area = (amb.comp && amb.larg) ? (amb.comp * amb.larg).toFixed(2) : 'Não medido';
-            html += `
-                <div class="report-section">
-                    <div class="report-ambiente-title">${amb.nome}</div>
-                    <table class="report-table">
-                        <tr>
-                            <th>Comprimento</th><td>${amb.comp ? amb.comp + ' m' : '—'}</td>
-                            <th>Largura</th><td>${amb.larg ? amb.larg + ' m' : '—'}</td>
-                            <th>Pé-direito</th><td>${amb.peDireito ? amb.peDireito + ' m' : '—'}</td>
-                            <th>Área do Piso</th><td>${area !== 'Não medido' ? area + ' m²' : '—'}</td>
-                        </tr>
-                    </table>
-            `;
-
+            html += `<div class="report-section"><div class="report-ambiente-title">${amb.nome}</div><table class="report-table"><tr><th>Comprimento</th><td>${amb.comp ? amb.comp + ' m' : '—'}</td><th>Largura</th><td>${amb.larg ? amb.larg + ' m' : '—'}</td><th>Pé-direito</th><td>${amb.peDireito ? amb.peDireito + ' m' : '—'}</td><th>Área Piso</th><td>${area !== 'Não medido' ? area + ' m²' : '—'}</td></tr></table>`;
             if (amb.paredes && amb.paredes.length > 0) {
-                html += `<h3 style="font-size:0.95rem; margin:12px 0 6px;">Paredes</h3>
-                    <table class="report-table">
-                        <thead><tr><th>Parede</th><th>Comp. (m)</th><th>Alt. (m)</th><th>Área Bruta</th><th>Vãos</th><th>Área Líquida</th></tr></thead><tbody>`;
+                html += `<h3 style="font-size:0.95rem; margin:12px 0 6px;">Paredes</h3><table class="report-table"><thead><tr><th>Parede</th><th>Comp.</th><th>Alt.</th><th>Área Bruta</th><th>Vãos</th><th>Área Líquida</th></tr></thead><tbody>`;
                 amb.paredes.forEach(p => {
                     const bruta = (p.comp * p.alt);
                     let vaos = 0;
-                    (amb.elementos || []).filter(e => e.paredeId === p.id).forEach(e => {
-                        if (e.larg && e.alt) vaos += (e.larg * e.alt);
-                    });
+                    (amb.elementos || []).filter(e => e.paredeId === p.id).forEach(e => { if (e.larg && e.alt) vaos += (e.larg * e.alt); });
                     html += `<tr><td>${p.nome}</td><td>${p.comp}</td><td>${p.alt}</td><td>${bruta.toFixed(2)} m²</td><td>${vaos.toFixed(2)} m²</td><td><strong>${(bruta - vaos).toFixed(2)} m²</strong></td></tr>`;
                 });
                 html += `</tbody></table>`;
             }
-
             if (amb.elementos && amb.elementos.length > 0) {
                 const tipoLabel = { janela: 'Janela', porta: 'Porta', tomada: 'Tomada', interruptor: 'Interruptor', ponto_hidraulico: 'Hidráulica', ponto_gas: 'Gás', ar_condicionado: 'Ar-Cond.' };
-                html += `<h3 style="font-size:0.95rem; margin:12px 0 6px;">Elementos e Pontos</h3>
-                    <table class="report-table">
-                        <thead><tr><th>Tipo</th><th>Parede Associada</th><th>Larg. (m)</th><th>Alt. (m)</th><th>Peitoril (m)</th></tr></thead><tbody>`;
+                html += `<h3 style="font-size:0.95rem; margin:12px 0 6px;">Elementos e Pontos</h3><table class="report-table"><thead><tr><th>Tipo</th><th>Parede</th><th>Larg.</th><th>Alt.</th><th>Peitoril</th></tr></thead><tbody>`;
                 amb.elementos.forEach(e => {
                     const parede = amb.paredes.find(p => p.id === e.paredeId);
                     html += `<tr><td>${tipoLabel[e.tipo] || e.tipo}</td><td>${parede ? parede.nome : '—'}</td><td>${e.larg || '—'}</td><td>${e.alt || '—'}</td><td>${e.peitoril || '—'}</td></tr>`;
                 });
                 html += `</tbody></table>`;
             }
-
             if (amb.fotos && amb.fotos.length > 0) {
-                html += `<h3 style="font-size:0.95rem; margin:12px 0 6px;">Fotos do Ambiente (${amb.fotos.length})</h3><div class="report-foto-grid">`;
+                html += `<h3 style="font-size:0.95rem; margin:12px 0 6px;">Fotos (${amb.fotos.length})</h3><div class="report-foto-grid">`;
                 amb.fotos.forEach(foto => { html += `<img src="${foto}" alt="Foto">`; });
                 html += `</div>`;
             }
             html += `</div>`;
         });
-
-        // Marcenaria
         if (this.data.marcenaria && this.data.marcenaria.length > 0) {
-            html += `<div class="report-section"><h2>🛋️ Planejamento de Marcenaria</h2><table class="report-table"><thead><tr><th>Ambiente</th><th>Item</th><th>Larg.</th><th>Prof.</th><th>Alt.</th><th>Folga</th><th>Avaliação</th></tr></thead><tbody>`;
+            html += `<div class="report-section"><h2>🛋️ Marcenaria</h2><table class="report-table"><thead><tr><th>Ambiente</th><th>Item</th><th>Larg.</th><th>Prof.</th><th>Alt.</th><th>Folga</th><th>Avaliação</th></tr></thead><tbody>`;
             this.data.marcenaria.forEach(m => {
                 const amb = this.data.ambientes.find(a => a.id === m.ambienteId);
                 const av = this.marcAvaliar(m);
                 const avLabel = { cabe: '✓ Cabe', apertado: '⚠ Apertado', 'nao-cabe': '✗ Não cabe', 'sem-medida': '— Sem medida' }[av.status];
-                html += `<tr><td>${amb ? amb.nome : '—'}</td><td>${m.nome}${m.modelo ? ' (' + m.modelo + ')' : ''}</td><td>${m.largura} m</td><td>${m.profundidade} m</td><td>${m.altura || '—'}</td><td>${m.folga} cm</td><td>${avLabel}</td></tr>`;
+                html += `<tr><td>${amb ? amb.nome : '—'}</td><td>${m.nome}</td><td>${m.largura} m</td><td>${m.profundidade} m</td><td>${m.altura || '—'}</td><td>${m.folga} cm</td><td>${avLabel}</td></tr>`;
             });
             html += `</tbody></table></div>`;
         }
-
-        // Checklist de Medição
         html += `<div class="report-section"><h2>Checklist de Medição</h2><table class="report-table"><thead><tr><th>Item</th><th>Status</th></tr></thead><tbody>`;
         const statusLabel = { pendente: 'Pendente', medido: 'Medido', conferido: 'Conferido', na: 'N/A' };
-        this.data.checklist.forEach(chk => {
-            html += `<tr><td>${chk.texto}</td><td>${statusLabel[chk.status] || chk.status}</td></tr>`;
-        });
+        this.data.checklist.forEach(chk => { html += `<tr><td>${chk.texto}</td><td>${statusLabel[chk.status] || chk.status}</td></tr>`; });
         html += `</tbody></table></div>`;
-        
-        html += `<div class="report-section" style="text-align:center; margin-top:40px; font-size:0.8rem; color:#888;"><p>Relatório gerado pelo aplicativo de Medição.</p></div>`;
+        html += `<div class="report-section" style="text-align:center; margin-top:40px; font-size:0.8rem; color:#888;"><p>Relatório de Medição.</p></div>`;
         container.innerHTML = html;
     },
 
     renderRelatorioVistoria(container, hoje) {
-        let html = `
-            <div class="report-header">
-                <h1>Relatório de Vistoria de Entrega</h1>
-                <p><strong>Empreendimento:</strong> ${this.data.projeto.nome} Unidade 801A</p>
-                <p><strong>Data da Vistoria:</strong> ${this.data.projeto.dataVisita} &nbsp;|&nbsp; <strong>Emissão:</strong> ${hoje}</p>
-            </div>
-        `;
-
+        let html = `<div class="report-header"><h1>Relatório de Vistoria de Entrega</h1><p><strong>Empreendimento:</strong> ${this.data.projeto.nome}</p><p><strong>Data:</strong> ${this.data.projeto.dataVisita} &nbsp;|&nbsp; <strong>Emissão:</strong> ${hoje}</p></div>`;
         const vistAmbData = this.data.vistoria.ambientes || {};
         const vistConfig = this.getChecklistVistoria().ambientes;
-        let hasDefeitos = false;
-        let vistHtml = '';
-
+        let hasDefeitos = false, vistHtml = '';
         Object.keys(vistConfig).forEach(tipo => {
             const cfg = vistConfig[tipo];
             let ambHtml = '', ambTemDefeito = false;
-            
             cfg.sections.forEach(sec => {
                 let secHtml = '';
                 sec.itens.forEach((item, idx) => {
                     const key = `${tipo}:${sec.titulo}:${idx}`;
                     const entry = vistAmbData[key];
-                    // Puxa apenas o que tem DEFEITO para o relatório da construtora
                     if (!entry || entry.status !== 'defeito') return; 
-                    
                     ambTemDefeito = true; hasDefeitos = true;
-                    secHtml += `
-                        <div class="report-vist-item status-defeito">
-                            <span class="vist-status-icon">✗</span>
-                            <div class="vist-item-text">
-                                <strong>${item}</strong>
-                                ${entry.obs ? `<div class="vist-item-obs" style="color:#C41E16; font-style:normal; margin-top:4px;">Descrição: ${entry.obs}</div>` : ''}
-                                ${entry.fotos && entry.fotos.length > 0 ? `<div class="report-foto-grid" style="margin-top:6px; grid-template-columns: repeat(4, 1fr);">${entry.fotos.map(f => `<img src="${f}" alt="Foto" style="height:60pt;">`).join('')}</div>` : ''}
-                            </div>
-                        </div>`;
+                    secHtml += `<div class="report-vist-item status-defeito"><span class="vist-status-icon">✗</span><div class="vist-item-text"><strong>${item}</strong>${entry.obs ? `<div class="vist-item-obs" style="color:#C41E16; font-style:normal; margin-top:4px;">Descrição: ${entry.obs}</div>` : ''}${entry.fotos && entry.fotos.length > 0 ? `<div class="report-foto-grid" style="margin-top:6px; grid-template-columns: repeat(4, 1fr);">${entry.fotos.map(f => `<img src="${f}" alt="Foto" style="height:60pt;">`).join('')}</div>` : ''}</div></div>`;
                 });
                 if (secHtml) ambHtml += `<h3 style="font-size:0.9rem; margin:10px 0 4px; color:#555;">${sec.titulo}</h3>${secHtml}`;
             });
-            
-            if (ambTemDefeito) {
-                vistHtml += `<div class="report-vist-section"><div class="report-ambiente-title">${cfg.label}</div>${ambHtml}</div>`;
-            }
+            if (ambTemDefeito) vistHtml += `<div class="report-vist-section"><div class="report-ambiente-title">${cfg.label}</div>${ambHtml}</div>`;
         });
+        if (hasDefeitos) { html += `<div class="report-section"><h2 style="border-left-color:#FF3B30;">⚠️ Pendências e Defeitos Encontrados</h2>${vistHtml}</div>`; } 
+        else { html += `<div class="report-section"><h2>Nenhum defeito registrado</h2><p>Todos os itens vistoriados foram marcados como OK ou Não se Aplica.</p></div>`; }
 
-        if (hasDefeitos) {
-            html += `<div class="report-section"><h2 style="border-left-color:#FF3B30;">⚠️ Pendências e Defeitos Encontrados</h2>${vistHtml}</div>`;
-        } else {
-            html += `<div class="report-section"><h2>Nenhum defeito registrado</h2><p>Todos os itens vistoriados foram marcados como OK ou Não se Aplica.</p></div>`;
-        }
-
-        // Adiciona as Observações Gerais por ambiente (se houver)
         const obsGeral = this.data.vistoria.obsGeral || {};
-        let hasObs = false;
-        let obsHtml = '';
+        let hasObs = false, obsHtml = '';
         Object.keys(obsGeral).forEach(tipo => {
             if (obsGeral[tipo] && obsGeral[tipo].trim() !== '') {
                 hasObs = true;
@@ -1582,13 +1594,11 @@ const app = {
                 obsHtml += `<div style="margin-bottom:12px;"><strong>${label}:</strong><br><span style="font-size:0.9rem;">${obsGeral[tipo]}</span></div>`;
             }
         });
-        if (hasObs) {
-            html += `<div class="report-section"><h2>📝 Observações Gerais Adicionais</h2>${obsHtml}</div>`;
-        }
-
-        html += `<div class="report-section" style="text-align:center; margin-top:40px; font-size:0.8rem; color:#888;"><p>Este documento é um registro visual e funcional da entrega do imóvel, baseado no roteiro de vistoria do aplicativo.</p></div>`;
+        if (hasObs) html += `<div class="report-section"><h2>📝 Observações Adicionais</h2>${obsHtml}</div>`;
+        html += `<div class="report-section" style="text-align:center; margin-top:40px; font-size:0.8rem; color:#888;"><p>Este documento é um registro visual e funcional da entrega do imóvel.</p></div>`;
         container.innerHTML = html;
     },
+
     printReport() {
         document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
         const relView = document.getElementById('view-relatorio');
@@ -1600,6 +1610,7 @@ const app = {
         setTimeout(() => { window.print(); }, 300);
         this.haptic('medium');
     },
+    
     printReportInNewTab() {
         this.renderRelatorio();
         const reportHtml = document.getElementById('report-content').innerHTML;
@@ -1621,16 +1632,17 @@ const app = {
             .report-header p { margin: 2px 0; color: #555; }
             @media print { body { padding: 0; max-width: none; } .report-section { page-break-inside: avoid; } .report-divergencia-box { page-break-inside: avoid; } }
         `;
-        const fullHtml = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Relatório de Vistoria</title><style>${css}</style></head><body>${reportHtml}</body></html>`;
+        const fullHtml = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Relatório</title><style>${css}</style></head><body>${reportHtml}</body></html>`;
         const win = window.open('', '_blank');
         if (!win) { this.showToast("Bloqueador de popup impediu. Permita popups.", 'error'); return; }
         win.document.open(); win.document.write(fullHtml); win.document.close();
         win.onload = () => { setTimeout(() => { win.focus(); win.print(); }, 500); };
         this.haptic('medium');
     },
+    
     exportCSV() {
         let csv = '\uFEFF';
-        csv += 'Ambiente;Tipo;Identificação/Elemento;Largura (m);Altura/Comprimento (m);Peitoril (m);Área (m²)\n';
+        csv += 'Ambiente;Tipo;Identificação;Largura;Altura;Peitoril;Área\n';
         this.data.ambientes.forEach(amb => {
             const areaPiso = (amb.comp && amb.larg) ? (amb.comp * amb.larg).toFixed(2) : '';
             csv += `"${amb.nome}";"Piso";"—";"${amb.larg || ''}";"${amb.comp || ''}";"${amb.peDireito || ''}";"${areaPiso}"\n`;
@@ -1639,15 +1651,12 @@ const app = {
         });
         csv += '\nChecklist;Status\n';
         this.data.checklist.forEach(chk => { csv += `"${chk.texto}";"${chk.status}"\n`; });
-        csv += '\nDivergências;Ambiente;Elemento;Medida Planta (m);Medida Real (m);Diferença (m);Diferença (%);Prioridade;Status;Descrição;Pergunta\n';
+        csv += '\nDivergências;Ambiente;Elemento;Medida Planta;Medida Real;Diferença;Prioridade;Status;Descrição\n';
         this.data.divergencias.forEach(d => {
             const dif = d.diferenca !== null ? d.diferenca.toFixed(3) : '';
-            const pct = d.diferencaPercentual !== null ? d.diferencaPercentual.toFixed(2) : '';
-            const desc = (d.descricao || '').replace(/"/g, '""');
-            const perg = (d.pergunta || '').replace(/"/g, '""');
-            csv += `"Sim";"${d.ambienteNome}";"${d.elemento}";"${d.medidaPlanta}";"${d.medidaReal}";"${dif}";"${pct}";"${d.prioridade}";"${d.status}";"${desc}";"${perg}"\n`;
+            csv += `"Sim";"${d.ambienteNome}";"${d.elemento}";"${d.medidaPlanta}";"${d.medidaReal}";"${dif}";"${d.prioridade}";"${d.status}";"${(d.descricao || '').replace(/"/g, '""')}"\n`;
         });
-        csv += '\nMarcenaria;Ambiente;Item;Largura (m);Profundidade (m);Altura (m);Folga (cm);Avaliação\n';
+        csv += '\nMarcenaria;Ambiente;Item;Largura;Profundidade;Altura;Folga;Avaliação\n';
         this.data.marcenaria.forEach(m => {
             const amb = this.data.ambientes.find(a => a.id === m.ambienteId);
             const av = this.marcAvaliar(m);
@@ -1664,9 +1673,7 @@ const app = {
                     const entry = vistData[key];
                     if (entry && entry.status) {
                         const stLabel = { ok: 'OK', defeito: 'Com defeito', na: 'Não se aplica' }[entry.status] || entry.status;
-                        const obs = (entry.obs || '').replace(/"/g, '""');
-                        const fotosQtd = (entry.fotos || []).length;
-                        csv += `"Sim";"${vistCfg[tipo].label}";"${sec.titulo}";"${item}";"${stLabel}";"${obs}";"${fotosQtd}"\n`;
+                        csv += `"Sim";"${vistCfg[tipo].label}";"${sec.titulo}";"${item}";"${stLabel}";"${(entry.obs || '').replace(/"/g, '""')}";"${(entry.fotos || []).length}"\n`;
                     }
                 });
             });
@@ -1675,7 +1682,7 @@ const app = {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `relatorio_vistoria_${this.data.projeto.id}_${new Date().toISOString().split('T')[0]}.csv`;
+        a.download = `relatorio_${this.data.projeto.id}.csv`;
         a.click();
         URL.revokeObjectURL(url);
         this.showToast("CSV exportado", 'success'); this.haptic('medium');
