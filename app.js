@@ -219,47 +219,55 @@ const app = {
         }
     },
 
-    listenToFirebase() {
+        listenToFirebase() {
         const docRef = doc(db, "projetos", this.data.projeto.id);
-        // O onSnapshot fica ouvindo o banco em tempo real
         onSnapshot(docRef, (docSnap) => {
+            // Só aplica os dados se NÃO estiver no meio de um envio local
             if (docSnap.exists() && !this._isSyncing) {
-                // Se os dados da nuvem forem diferentes do local, atualiza a tela
                 const dataNuvem = docSnap.data();
                 this.applyCloudData(dataNuvem, true);
             }
         });
     },
 
-    applyCloudData(dataNuvem, showToast = true) {
+        applyCloudData(dataNuvem, showToast = true) {
         let changed = false;
         
-        // Mescla as fotos locais (que não vão para a nuvem) com os dados da nuvem
+        // 1. Sincroniza Ambientes (incluindo novos e excluídos)
         if (dataNuvem.ambientes) {
-            dataNuvem.ambientes.forEach(ambNuvem => {
-                const ambLocal = this.data.ambientes.find(a => a.id === ambNuvem.id);
-                if (ambLocal) {
-                    ambNuvem.fotos = ambLocal.fotos || [];
-                } else {
-                    ambNuvem.fotos = [];
-                }
+            // Pega as fotos que estão no aparelho atual para não perder
+            const fotosLocais = {};
+            this.data.ambientes.forEach(amb => {
+                if (amb.fotos && amb.fotos.length > 0) fotosLocais[amb.id] = amb.fotos;
             });
-            this.data.ambientes = dataNuvem.ambientes;
+
+            // Substitui a lista inteira pela da nuvem
+            this.data.ambientes = dataNuvem.ambientes.map(ambNuvem => {
+                // Se o ambiente da nuvem tiver fotos salvas no celular, recoloca elas
+                if (fotosLocais[ambNuvem.id]) {
+                    ambNuvem.fotos = fotosLocais[ambNuvem.id];
+                } else {
+                    ambNuvem.fotos = ambNuvem.fotos || [];
+                }
+                return ambNuvem;
+            });
             changed = true;
         }
         
+        // 2. Sincroniza o resto dos dados
         if (dataNuvem.divergencias) { this.data.divergencias = dataNuvem.divergencias; changed = true; }
         if (dataNuvem.vistoria) { this.data.vistoria = dataNuvem.vistoria; changed = true; }
         if (dataNuvem.marcenaria) { this.data.marcenaria = dataNuvem.marcenaria; changed = true; }
         if (dataNuvem.checklist) { this.data.checklist = dataNuvem.checklist; changed = true; }
         if (dataNuvem.plantaPins) { this.data.plantaPins = dataNuvem.plantaPins; changed = true; }
 
+        // 3. Atualiza a tela e salva no celular
         if (changed) {
             localStorage.setItem('vistoriaAppData', JSON.stringify(this.data));
-            this.renderAll();
+            this.renderAll(); 
             this.updateSaveStatus('Sincronizado', 'saved');
             
-            if (showToast) this.showToast("Dados atualizados da nuvem", 'success');
+            if (showToast) this.showToast("Dados atualizados", 'success');
         }
     },
 
@@ -479,7 +487,7 @@ const app = {
         this.switchTabProgrammatic('tab-geral');
     },
     
-    addAmbiente() {
+        addAmbiente() {
         const nome = prompt("Nome do novo ambiente:", ""); // Deixei vazio
         if (!nome || nome.trim() === '') return;
         this.data.ambientes.push({ id: Date.now().toString(), nome: nome.trim(), comp: null, larg: null, peDireito: null, paredes: [], elementos: [], fotos: [], checklistCtx: {} });
