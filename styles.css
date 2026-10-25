@@ -240,17 +240,18 @@ textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 
 .search-bar input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 4px var(--primary-glow); background: var(--bg-elevated); }
 .search-bar .search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-light); pointer-events: none; font-size: 1rem; }
 
-.amb-card-grid { 
-    display: grid; 
-    grid-template-columns: repeat(2, 1fr); 
-    gap: 10px; 
-    margin-top: 12px; 
+/* Grade Responsiva: 1 coluna no celular, 2 no tablet, 3 no desktop */
+.amb-card-grid {
+    display: grid;
+    grid-template-columns: 1fr; /* Padrão celular: 1 coluna */
+    gap: 10px;
+    margin-top: 12px;
 }
 
 .amb-mini-card {
     background: var(--bg-elevated);
-    border-radius: 12px;
-    padding: 12px 14px;
+    border-radius: 14px;
+    padding: 14px 16px;
     cursor: pointer;
     display: flex;
     flex-direction: column;
@@ -259,10 +260,11 @@ textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
     border: 1px solid var(--border);
     transition: transform 0.15s ease, background-color 0.15s ease;
+    width: 100%;
 }
 
 .amb-mini-card:active {
-    transform: scale(0.96);
+    transform: scale(0.97);
     background: rgba(120, 120, 128, 0.08);
 }
 
@@ -270,8 +272,8 @@ textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 
 .amb-mini-card::before {
     content: '';
     position: absolute;
-    left: 14px;
-    top: 16px;
+    left: 16px;
+    top: 18px;
     width: 8px;
     height: 8px;
     border-radius: 50%;
@@ -284,7 +286,7 @@ textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 
 .amb-mini-card::after {
     content: '›';
     position: absolute;
-    right: 12px;
+    right: 16px;
     top: 50%;
     transform: translateY(-50%);
     font-size: 1.4rem;
@@ -294,28 +296,36 @@ textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 
 }
 
 .amb-mini-card .mini-nome { 
-    font-size: 0.9rem; 
+    font-size: 0.95rem; 
     font-weight: 700; 
     color: var(--text); 
-    margin-bottom: 2px; 
-    padding-left: 16px; 
-    padding-right: 12px; 
+    margin-bottom: 4px; 
+    padding-left: 18px; 
+    padding-right: 24px; /* Espaço para não encostar na setinha */
     overflow: hidden; 
     text-overflow: ellipsis; 
     white-space: nowrap; 
 }
 
 .amb-mini-card .mini-sub { 
-    font-size: 0.75rem; 
+    font-size: 0.8rem; 
     color: var(--text-light); 
-    font-weight: 600; 
-    padding-left: 16px;
+    font-weight: 500; 
+    padding-left: 18px;
 }
 
-/* No iPad, 3 colunas */
-@media (min-width: 768px) {
-    .amb-card-grid { grid-template-columns: repeat(3, 1fr); }
-    .amb-mini-card .mini-nome { font-size: 1rem; }
+/* Tablets (iPad em retrato ou celulares grandes deitados) */
+@media (min-width: 600px) {
+    .amb-card-grid {
+        grid-template-columns: repeat(2, 1fr); /* 2 colunas */
+    }
+}
+
+/* Monitores grandes e iPad em paisagem */
+@media (min-width: 900px) {
+    .amb-card-grid {
+        grid-template-columns: repeat(3, 1fr); /* 3 colunas */
+    }
 }
 
 .toast-container {
