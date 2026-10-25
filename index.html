@@ -120,13 +120,39 @@
                 </div>
             </div>
 
+                        <!-- ABA: PAREDES -->
             <div id="tab-paredes" class="tab-content">
-                <div class="card">
-                    <h3>Cadastrar Nova Parede</h3>
+                <!-- DESENHO DA PLANTA DO AMBIENTE -->
+                                <!-- DESENHO DA PLANTA DO AMBIENTE -->
+                <div class="card" style="padding: 12px; margin-bottom: 12px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                        <h3 style="margin: 0; font-size: 1rem;">Planta do Ambiente</h3>
+                        <button class="btn btn-secondary" id="btn-editar-planta" style="width: auto; padding: 6px 12px; margin: 0; font-size: 0.8rem;" onclick="app.toggleEditorPlanta()">✏️ Desenhar</button>
+                    </div>
+                    
+                    <div class="svg-container" id="svg-planta-ambiente" style="background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 12px; height: 260px; display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden;">
+                        <!-- O SVG será injetado aqui pelo JS -->
+                    </div>
+                    
+                    <!-- Controles do Editor -->
+                    <div id="editor-controles" style="display: none; margin-top: 12px; text-align: center;">
+                        <p class="hint-text" style="margin-bottom: 8px;">Toque nos quadrados para desenhar o formato do piso.</p>
+                        <button class="btn btn-primary" onclick="app.salvarDesenhoPlanta()">💾 Salvar Formato</button>
+                        <button class="btn btn-secondary" onclick="app.cancelarDesenhoPlanta()">Cancelar</button>
+                    </div>
+                </div>
+
+                <!-- Lista de Paredes Geradas -->
+                <div id="paredes-list" class="list-container"></div>
+
+                <!-- CADASTRO MANUAL DE PAREDES -->
+                <div class="card" style="margin-top: 12px;">
+                    <h3>Adicionar Parede Manual</h3>
+                    <p class="hint-text" style="margin-top:-10px;">Para pilares, vigas ou paredes internas que não formam o contorno.</p>
                     <div class="input-row">
                         <div class="input-group">
                             <label>Identificação</label>
-                            <input type="text" id="parede-nome" placeholder="Ex: Parede Norte">
+                            <input type="text" id="parede-nome" placeholder="Ex: Pilar Central">
                         </div>
                         <div class="input-group">
                             <label>Comprimento (m)</label>
@@ -139,6 +165,7 @@
                     </div>
                     <button class="btn btn-primary" onclick="app.addParede()">+ Adicionar Parede</button>
                 </div>
+                
                 <div id="paredes-list" class="list-container"></div>
             </div>
 

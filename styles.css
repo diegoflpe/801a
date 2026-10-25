@@ -829,3 +829,73 @@ textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 
     .report-vist-item { page-break-inside: avoid; }
     * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
 }
+
+/* ============================================ */
+/* DESENHO DA PLANTA DO AMBIENTE (SVG)          */
+/* ============================================ */
+.svg-wall-line {
+    stroke: var(--text-light);
+    stroke-width: 4;
+    cursor: pointer;
+    transition: stroke 0.2s, stroke-width 0.2s;
+}
+.svg-wall-line:hover, .svg-wall-line:active {
+    stroke: var(--primary);
+    stroke-width: 6;
+}
+.svg-wall-text {
+    font-size: 10px;
+    fill: var(--text-light);
+    text-anchor: middle;
+    dominant-baseline: middle;
+    font-weight: 600;
+    pointer-events: none;
+}
+.svg-dimension-line {
+    stroke: var(--border);
+    stroke-width: 1;
+    stroke-dasharray: 4;
+}
+.svg-dimension-text {
+    font-size: 9px;
+    fill: var(--text-light);
+    text-anchor: middle;
+    font-weight: 500;
+}
+
+/* ============================================ */
+/* EDITOR DE PLANTA (GRID)                      */
+/* ============================================ */
+.grid-cell {
+    fill: transparent;
+    stroke: var(--border);
+    stroke-width: 1;
+    cursor: pointer;
+    transition: fill 0.1s ease;
+}
+.grid-cell:hover {
+    fill: rgba(120, 120, 128, 0.1);
+}
+.grid-cell.active {
+    fill: rgba(0, 122, 255, 0.15); /* Azul clarinho para o piso */
+    stroke: var(--primary);
+}
+.wall-edge {
+    stroke: var(--text); /* Paredes escuras */
+    stroke-width: 4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    cursor: pointer;
+    transition: stroke 0.2s;
+}
+.wall-edge:hover, .wall-edge:active {
+    stroke: var(--primary);
+    stroke-width: 6;
+}
+.wall-text {
+    font-size: 9px;
+    fill: var(--primary);
+    font-weight: 700;
+    text-anchor: middle;
+    pointer-events: none;
+}

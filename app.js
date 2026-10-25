@@ -488,10 +488,16 @@ const app = {
         this.calcArea(amb);
         this.renderFotos(amb);
         this.renderParedes(amb);
+        this.desenharPlantaAmbiente(amb);
         this.renderElementos(amb);
         this.populateParedeSelect(amb);
         this.navigate('ambiente-detalhe');
         this.switchTabProgrammatic('tab-geral');
+
+                setTimeout(() => {
+            this.desenharPlantaAmbiente(amb);
+        }, 300);
+
     },
     
         addAmbiente() {
@@ -627,6 +633,207 @@ const app = {
                 <div class="list-item-details">${p.comp}m x ${p.alt}m • Área Bruta: ${areaBruta} m²<br>Vãos: ${areaVaos.toFixed(2)} m² • <strong>Área Líquida: ${areaLiquida} m²</strong></div>`;
             container.appendChild(div);
         });
+    },
+
+                // ==========================================
+    // DESENHO E EDIÇÃO DA PLANTA DO AMBIENTE
+    // ==========================================
+    desenharPlantaAmbiente(amb) {
+        const container = document.getElementById('svg-planta-ambiente');
+        if (!container) return;
+
+        let containerW = container.clientWidth;
+        let containerH = container.clientHeight;
+        if (containerW === 0) {
+            setTimeout(() => this.desenharPlantaAmbiente(amb), 100);
+            return;
+        }
+
+        // Grade padrão 6x6 (36 quadrados)
+        const gridSize = 6;
+        
+        // Se o ambiente não tem um desenho salvo, começa com um retângulo (4x4 no centro)
+        if (!amb.grid) {
+            amb.grid = Array(gridSize).fill().map(() => Array(gridSize).fill(false));
+            for(let r=1; r<=4; r++) {
+                for(let c=1; c<=4; c++) {
+                    amb.grid[r][c] = true;
+                }
+            }
+        }
+
+        if (this._isEditingPlanta) {
+            this._renderEditorGrid(container, amb, containerW, containerH, gridSize);
+        } else {
+            this._renderPlantaSalva(container, amb, containerW, containerH, gridSize);
+        }
+    },
+
+    _renderPlantaSalva(container, amb, w, h, size) {
+        const cellW = w / size;
+        const cellH = h / size;
+        
+        let svg = `<svg width="100%" height="100%" viewBox="0 0 ${w} ${h}" style="font-family: -apple-system, sans-serif;">`;
+
+        // 1. Desenha o piso (quadrados preenchidos)
+        for (let r = 0; r < size; r++) {
+            for (let c = 0; c < size; c++) {
+                if (amb.grid[r][c]) {
+                    svg += `<rect x="${c*cellW}" y="${r*cellH}" width="${cellW}" height="${cellH}" fill="rgba(0, 122, 255, 0.05)" stroke="var(--border)" stroke-width="1"/>`;
+                }
+            }
+        }
+
+        // 2. Desenha as paredes (bordas onde há transição)
+        for (let r = 0; r < size; r++) {
+            for (let c = 0; c < size; c++) {
+                if (!amb.grid[r][c]) continue;
+                
+                const x = c * cellW;
+                const y = r * cellH;
+                
+                // Parede Norte (Topo)
+                if (r === 0 || !amb.grid[r-1][c]) {
+                    svg += `<line x1="${x}" y1="${y}" x2="${x+cellW}" y2="${y}" class="wall-edge" onclick="app.editarParedeDesenho('${amb.id}', 'norte', ${c}, ${r})" />`;
+                }
+                // Parede Sul (Base)
+                if (r === size-1 || !amb.grid[r+1][c]) {
+                    svg += `<line x1="${x}" y1="${y+cellH}" x2="${x+cellW}" y2="${y+cellH}" class="wall-edge" onclick="app.editarParedeDesenho('${amb.id}', 'sul', ${c}, ${r})" />`;
+                }
+                // Parede Oeste (Esquerda)
+                if (c === 0 || !amb.grid[r][c-1]) {
+                    svg += `<line x1="${x}" y1="${y}" x2="${x}" y2="${y+cellH}" class="wall-edge" onclick="app.editarParedeDesenho('${amb.id}', 'oeste', ${c}, ${r})" />`;
+                }
+                // Parede Leste (Direita)
+                if (c === size-1 || !amb.grid[r][c+1]) {
+                    svg += `<line x1="${x+cellW}" y1="${y}" x2="${x+cellW}" y2="${y+cellH}" class="wall-edge" onclick="app.editarParedeDesenho('${amb.id}', 'leste', ${c}, ${r})" />`;
+                }
+            }
+        }
+
+        svg += `</svg>`;
+        container.innerHTML = svg;
+    },
+
+    _renderEditorGrid(container, amb, w, h, size) {
+        const cellW = w / size;
+        const cellH = h / size;
+        let svg = `<svg width="100%" height="100%" viewBox="0 0 ${w} ${h}" style="font-family: -apple-system, sans-serif;">`;
+
+        for (let r = 0; r < size; r++) {
+            for (let c = 0; c < size; c++) {
+                const isAtivo = amb.grid[r][c] ? 'active' : '';
+                svg += `<rect x="${c*cellW}" y="${r*cellH}" width="${cellW}" height="${cellH}" class="grid-cell ${isAtivo}" onclick="app.toggleCelulaGrid(${r}, ${c})" />`;
+            }
+        }
+
+        svg += `</svg>`;
+        container.innerHTML = svg;
+    },
+
+    toggleEditorPlanta() {
+        this._isEditingPlanta = !this._isEditingPlanta;
+        const amb = this.data.ambientes.find(a => a.id === this.currentAmbienteId);
+        if (!amb) return;
+
+        const btn = document.getElementById('btn-editar-planta');
+        const controles = document.getElementById('editor-controles');
+        
+        if (this._isEditingPlanta) {
+            // Faz um backup temporário caso cancele
+            this._backupGrid = JSON.parse(JSON.stringify(amb.grid));
+            btn.textContent = "✏️ Editando...";
+            controles.style.display = 'block';
+            this.desenharPlantaAmbiente(amb);
+        } else {
+            btn.textContent = "✏️ Desenhar";
+            controles.style.display = 'none';
+            this.desenharPlantaAmbiente(amb);
+        }
+    },
+
+    toggleCelulaGrid(r, c) {
+        const amb = this.data.ambientes.find(a => a.id === this.currentAmbienteId);
+        if (!amb) return;
+        amb.grid[r][c] = !amb.grid[r][c];
+        this.desenharPlantaAmbiente(amb); // Redesenha na hora
+        this.haptic('light');
+    },
+
+    salvarDesenhoPlanta() {
+        this._isEditingPlanta = false;
+        document.getElementById('btn-editar-planta').textContent = "✏️ Desenhar";
+        document.getElementById('editor-controles').style.display = 'none';
+        
+        const amb = this.data.ambientes.find(a => a.id === this.currentAmbienteId);
+        if (!amb) return;
+
+        // Limpa paredes antigas geradas automaticamente para não duplicar
+        if (amb.paredes) {
+            amb.paredes = amb.paredes.filter(p => !p.nome.includes('(Parede)') && !p.id.startsWith('auto_'));
+        }
+
+        // Salva os dados e atualiza a tela
+        this.saveLocal();
+        this.syncToFirebase();
+        this.desenharPlantaAmbiente(amb);
+        this.renderParedes(amb);
+        this.showToast("Formato do ambiente salvo", 'success');
+        this.haptic('medium');
+    },
+
+    cancelarDesenhoPlanta() {
+        const amb = this.data.ambientes.find(a => a.id === this.currentAmbienteId);
+        if (!amb) return;
+        amb.grid = this._backupGrid; // Restaura o backup
+        this._isEditingPlanta = false;
+        document.getElementById('btn-editar-planta').textContent = "✏️ Desenhar";
+        document.getElementById('editor-controles').style.display = 'none';
+        this.desenharPlantaAmbiente(amb);
+    },
+
+    editarParedeDesenho(ambId, direcao, col, row) {
+        if (this._isEditingPlanta) return; // Se estiver editando o grid, não deixa editar parede
+        const amb = this.data.ambientes.find(a => a.id === ambId);
+        if (!amb) return;
+
+        // Cria um ID único para a parede baseada na posição
+        const wallId = `auto_${direcao}_${row}_${col}`;
+        let parede = amb.paredes?.find(p => p.id === wallId);
+        
+        const nomePadrao = `Parede ${direcao.charAt(0).toUpperCase() + direcao.slice(1)}`;
+        const alturaStr = prompt(`Altura da ${nomePadrao} (em metros):`, parede ? parede.alt : "2.70");
+        if (alturaStr === null) return;
+
+        const altura = parseFloat(alturaStr) || 2.70;
+
+        // O comprimento de cada quadrado depende da medida real do ambiente
+        let comp = 1; 
+        if (amb.comp && amb.larg) {
+            // Verifica qual lado do grid o usuário está medindo (horizontal = comp, vertical = larg)
+            const isHorizontal = (direcao === 'norte' || direcao === 'sul');
+            const tamanhoTotal = isHorizontal ? amb.comp : amb.larg;
+            comp = tamanhoTotal / 6; // Divide pela quantidade de quadrados (6)
+        }
+
+        if (parede) {
+            parede.alt = altura;
+        } else {
+            if (!amb.paredes) amb.paredes = [];
+            amb.paredes.push({
+                id: wallId,
+                nome: nomePadrao,
+                comp: comp,
+                alt: altura
+            });
+        }
+
+        this.saveLocal();
+        this.syncToFirebase();
+        this.renderParedes(amb);
+        this.desenharPlantaAmbiente(amb);
+        this.showToast(`${nomePadrao} salva`, 'success');
+        this.haptic('medium');
     },
     
     removeParede(id) {
