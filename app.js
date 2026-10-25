@@ -203,25 +203,36 @@ const app = {
 
     async syncFromFirebase() {
         if (!navigator.onLine) return;
+        this.updateSaveStatus('Buscando...', 'syncing');
         try {
             const docRef = doc(db, "projetos", this.data.projeto.id);
             const docSnap = await getDoc(docRef);
             
             if (docSnap.exists()) {
-                this.applyCloudData(docSnap.data(), false);
+                this.applyCloudData(docSnap.data(), true);
+            } else {
+                this.updateSaveStatus('Sincronizado', 'saved');
             }
         } catch (e) {
             console.error("Erro ao baixar da nuvem:", e);
+            this.updateSaveStatus('Erro nuvem', 'unsynced');
         }
     },
 
-        listenToFirebase() {
+    listenToFirebase() {
         const docRef = doc(db, "projetos", this.data.projeto.id);
         onSnapshot(docRef, (docSnap) => {
-            // Só aplica os dados se NÃO estiver no meio de um envio local
-            if (docSnap.exists() && !this._isSyncing) {
+            // Se chegou um dado novo da nuvem e NÃO fomos nós que acabamos de salvar
+            if (docSnap.exists()) {
                 const dataNuvem = docSnap.data();
-                this.applyCloudData(dataNuvem, true);
+                
+                // Compara se o dado da nuvem é diferente do local para não dar loop
+                const nuvemString = JSON.stringify(dataNuvem.ambientes);
+                const localString = JSON.stringify(this.data.ambientes.map(a => { const c = {...a}; c.fotos = []; return c; }));
+                
+                if (nuvemString !== localString) {
+                    this.applyCloudData(dataNuvem, false); // Atualiza sem mostrar o toast para não encher a tela
+                }
             }
         });
     },
