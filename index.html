@@ -69,7 +69,7 @@
                 <button class="btn btn-secondary" onclick="app.navigate('marcenaria')">🛋️ Planejamento de Marcenaria</button>
                 <button class="btn btn-secondary" onclick="app.navigate('relatorio')">📄 Gerar Relatório</button>
                 <button class="btn btn-secondary" onclick="app.exportBackup()">💾 Exportar Backup JSON</button>
-                <p class="hint-text" style="margin-top:12px; font-size:0.72rem; text-align:center;">
+                <p class="hint-text" style="margin-top:12px; font-size:0.72rem; text-align:center; margin-bottom:0;">
                     📱 Planta e fotos ficam apenas neste dispositivo. Para usar em outro aparelho, use o Backup JSON.
                 </p>
             </div>
@@ -335,7 +335,7 @@
         <!-- MARCENARIA -->
         <section id="view-marcenaria" class="view">
             <h2>🛋️ Planejamento de Marcenaria</h2>
-            <p class="hint-text">Registre móveis e eletrodomésticos para comparar com o espaço medido. O sistema avisa se parecem caber.</p>
+            <p class="hint-text" style="margin-top: 0;">Registre móveis e eletrodomésticos para comparar com o espaço medido. O sistema avisa se parecem caber.</p>
             
             <div class="card">
                 <h3>➕ Novo Móvel / Eletrodoméstico</h3>
@@ -382,59 +382,85 @@
             <div id="marc-list" class="list-container"></div>
         </section>
 
-        <!-- VISTORIA DE ENTREGA -->
+        <!-- VISTORIA DE ENTREGA (MENU) -->
         <section id="view-vistoria" class="view">
             <h2>🔍 Vistoria de Entrega</h2>
-            <p class="hint-text">Roteiro guiado para inspeção da entrega da obra. Marque cada item, tire fotos e registre observações. No fim, gere o relatório de pendências para a construtora.</p>
+            <p class="hint-text" style="margin-top: 0;">Roteiro guiado para inspeção da entrega da obra. Marque cada item, tire fotos e registre observações. No fim, gere o relatório de pendências para a construtora.</p>
+            
             <div class="card">
-                <h3>📋 Antes de ir — O que levar</h3>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+    <h3 style="margin: 0;">📋 Antes de ir — O que levar</h3>
+    <button class="btn btn-secondary" style="width: auto; padding: 6px 12px; font-size: 0.8rem; margin: 0;" onclick="app.vistLimparPreparacao()">Limpar</button>
+</div>
                 <div id="vist-prep-list" class="list-container"></div>
             </div>
+            
             <div class="card">
                 <h3>🏠 Ambientes</h3>
-                <p class="hint-text">Toque em um ambiente para abrir o roteiro detalhado.</p>
+                <p class="hint-text" style="margin-top: 0;">Toque em um ambiente para abrir o roteiro detalhado.</p>
                 <div id="vist-ambientes-list" class="list-container"></div>
             </div>
+            
             <div class="card">
                 <h3>⚠️ Pendências Registradas</h3>
-                <p class="hint-text">Itens marcados como "Com Defeito" em todos os ambientes.</p>
+                <p class="hint-text" style="margin-top: 0;">Itens marcados como "Com Defeito" em todos os ambientes.</p>
                 <div id="vist-pendencias-list" class="list-container"></div>
             </div>
+            
             <button class="btn btn-primary" onclick="app.navigate('relatorio')">📄 Gerar Relatório Completo</button>
         </section>
 
-        <!-- ROTEIRO DE UM AMBIENTE DA VISTORIA -->
+        <!-- ROTEIRO DE UM AMBIENTE ESPECÍFICO (CORRIGIDO) -->
         <section id="view-vistoria-ambiente" class="view">
             <button class="btn btn-back" onclick="app.navigate('vistoria')">← Voltar para Vistoria</button>
             <h2 id="vist-amb-nome" class="page-title">Ambiente</h2>
+            <h2 id="vist-amb-nome" class="page-title">Ambiente</h2>
+
+<div style="display: flex; justify-content: flex-end; margin-bottom: 12px;">
+    <button class="btn btn-secondary" style="width: auto; padding: 8px 14px; font-size: 0.85rem; margin: 0; color: var(--danger);" onclick="app.vistLimparRoteiroAmbiente()">🗑️ Limpar Ambiente</button>
+</div>
+            
+            <!-- Roteiro Técnico -->
             <div id="vist-amb-roteiro" class="list-container"></div>
-            <div-btn class="card">
-                <"h3>📝 Observações Gerais deste Ambiente data</h3>
-                <div class="input-group">
-                   -type <label>Texto livre (="qualquer coisa que não esteja no checklistport)</label>
-                    <textarea id="vist-amb-obs-geral" rows="3" placeholder="Ex: Encontrei uma mancha de umidade no canto superior direito..." onchange="app.vistSalvarObsGeral()"></textarea>
+            
+            <!-- Texto Livre (Corrigido) -->
+            <div class="card" style="margin-top: 20px;">
+                <h3 style="margin-bottom: 8px;">📝 Observações Gerais deste Ambiente</h3>
+                <p class="hint-text" style="margin-top: 0; margin-bottom: 10px;">Use este espaço para anotar qualquer coisa que não esteja no checklist acima.</p>
+                <div class="input-group" style="margin-bottom: 0;">
+                    <textarea id="vist-amb-obs-geral" rows="4" placeholder="Ex: Encontrei uma mancha de umidade no canto superior direito..." onchange="app.vistSalvarObsGeral()"></textarea>
                 </div>
             </div>
-            <button class="btn btn-primary" onclick="app.navigate('vistoria')">✅ Concluir este Ambiente</button>
+            
+            <button class="btn btn-primary" onclick="app.navigate('vistoria')">✅ Concluir e Voltar</button>
         </section>
 
-        <!-- RELATÓRIO -->
+          <!-- RELATÓRIOS -->
         <section id="view-relatorio" class="view">
-            <h2>Relatório de Vistoria</h2>
+            <h2>Relatórios</h2>
+            
+            <div class="tabs">
+                <button class="tab-btn active" onclick="app.switchTabRelatorio('rel-medicao', event)">📐 Medição</button>
+                <button class="tab-btn" onclick="app.switchTabRelatorio('rel-vistoria', event)">🔍 Vistoria</button>
+            </div>
+
             <div class="report-actions">
                 <button class="btn btn-primary" onclick="app.printReport()">🖨️ Imprimir / Salvar PDF</button>
                 <button class="btn btn-secondary" onclick="app.printReportInNewTab()">🖨️ Imprimir em Nova Aba (fallback)</button>
                 <button class="btn btn-secondary" onclick="app.exportCSV()">📊 Exportar CSV (Planilha)</button>
             </div>
+            
             <div id="report-content" class="report-paper"></div>
         </section>
 
     </main>
 
+    <!-- FAB: Medição Rápida -->
     <button id="fab-quick-measure" onclick="app.openQuickMeasure()" aria-label="Medição Rápida">
         ⚡<span class="fab-label">Medir</span>
     </button>
 
+    <!-- MODAL: Medição Rápida -->
     <div id="quick-measure-modal" class="modal-overlay">
         <div class="modal-sheet">
             <div class="modal-handle"></div>
@@ -447,7 +473,7 @@
                 <div class="qm-type-grid" id="qm-type-grid">
                     <button class="qm-type-btn" data-type="parede">📏 Parede</button>
                     <button class="qm-type-btn" data-type="janela">🪟 Janela</button>
-                    <button class="qm-typea">🚪 Porta</button>
+                    <button class="qm-type-btn" data-type="porta">🚪 Porta</button>
                     <button class="qm-type-btn" data-type="tomada">🔌 Tomada</button>
                     <button class="qm-type-btn" data-type="interruptor">💡 Interruptor</button>
                     <button class="qm-type-btn" data-type="ponto_hidraulico">🚰 Hidráulica</button>

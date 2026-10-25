@@ -1,4 +1,4 @@
-const CACHE_NAME = 'vistoria-v2';
+const CACHE_NAME = 'vistoria-v1';
 const ASSETS = [
   './',
   './index.html',

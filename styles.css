@@ -240,18 +240,83 @@ textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 
 .search-bar input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 4px var(--primary-glow); background: var(--bg-elevated); }
 .search-bar .search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-light); pointer-events: none; font-size: 1rem; }
 
-.amb-card-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 12px; }
-.amb-mini-card {
-    background: var(--bg-elevated); border-radius: 12px; padding: 12px;
-    border-left: 4px solid var(--border); cursor: pointer;
-    transition: transform 0.15s ease; box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+.amb-card-grid { 
+    display: grid; 
+    grid-template-columns: repeat(2, 1fr); 
+    gap: 10px; 
+    margin-top: 12px; 
 }
-.amb-mini-card:active { transform: scale(0.97); }
-.amb-mini-card.status-vermelho { border-left-color: var(--danger); }
-.amb-mini-card.status-amarelo { border-left-color: var(--warning); }
-.amb-mini-card.status-verde { border-left-color: var(--success); }
-.amb-mini-card .mini-nome { font-size: 0.85rem; font-weight: 700; color: var(--text); margin-bottom: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.amb-mini-card .mini-sub { font-size: 0.7rem; color: var(--text-light); font-weight: 600; }
+
+.amb-mini-card {
+    background: var(--bg-elevated);
+    border-radius: 12px;
+    padding: 12px 14px;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    position: relative;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+    border: 1px solid var(--border);
+    transition: transform 0.15s ease, background-color 0.15s ease;
+}
+
+.amb-mini-card:active {
+    transform: scale(0.96);
+    background: rgba(120, 120, 128, 0.08);
+}
+
+/* Bolinha de status */
+.amb-mini-card::before {
+    content: '';
+    position: absolute;
+    left: 14px;
+    top: 16px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+}
+.amb-mini-card.status-vermelho::before { background: var(--danger); }
+.amb-mini-card.status-amarelo::before { background: var(--warning); }
+.amb-mini-card.status-verde::before { background: var(--success); }
+
+/* Seta indicando clique */
+.amb-mini-card::after {
+    content: '›';
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 1.4rem;
+    color: var(--text-light);
+    opacity: 0.5;
+    font-weight: 300;
+}
+
+.amb-mini-card .mini-nome { 
+    font-size: 0.9rem; 
+    font-weight: 700; 
+    color: var(--text); 
+    margin-bottom: 2px; 
+    padding-left: 16px; 
+    padding-right: 12px; 
+    overflow: hidden; 
+    text-overflow: ellipsis; 
+    white-space: nowrap; 
+}
+
+.amb-mini-card .mini-sub { 
+    font-size: 0.75rem; 
+    color: var(--text-light); 
+    font-weight: 600; 
+    padding-left: 16px;
+}
+
+/* No iPad, 3 colunas */
+@media (min-width: 768px) {
+    .amb-card-grid { grid-template-columns: repeat(3, 1fr); }
+    .amb-mini-card .mini-nome { font-size: 1rem; }
+}
 
 .toast-container {
     position: fixed; top: calc(70px + var(--safe-top)); left: 50%; transform: translateX(-50%);
