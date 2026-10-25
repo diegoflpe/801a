@@ -85,7 +85,8 @@ const app = {
         plantaPins: [],
         divergencias: [],
         marcenaria: [],
-        vistoria: { preparacao: {}, ambientes: {}, obsGeral: {} }
+        vistoria: { preparacao: {}, ambientes: {}, obsGeral: {} },
+        paredesOcultas: [],
     },
     currentAmbienteId: null,
     currentTab: 'tab-geral',
@@ -153,6 +154,7 @@ const app = {
             if (!this.data.divergencias) this.data.divergencias = [];
             if (!this.data.marcenaria) this.data.marcenaria = [];
             if (!this.data.vistoria) this.data.vistoria = { preparacao: {}, ambientes: {}, obsGeral: {} };
+            if (!this.data.paredesOcultas) this.data.paredesOcultas = [];
         } else {
             // Dados iniciais (só roda se não tiver nada salvo)
             this.data.ambientes = [
@@ -692,21 +694,37 @@ const app = {
                 const x = c * cellW;
                 const y = r * cellH;
                 
+                const checkOculta = (dir) => {
+                    const id = `auto_${dir}_${r}_${c}`;
+                    return this.data.paredesOcultas.includes(id);
+                };
+
                 // Parede Norte (Topo)
                 if (r === 0 || !amb.grid[r-1][c]) {
-                    svg += `<line x1="${x}" y1="${y}" x2="${x+cellW}" y2="${y}" class="wall-edge" onclick="app.editarParedeDesenho('${amb.id}', 'norte', ${c}, ${r})" />`;
+                    if (!checkOculta('norte')) {
+                        svg += `<line x1="${x}" y1="${y}" x2="${x+cellW}" y2="${y}" class="wall-edge" onclick="app.editarParedeDesenho('${amb.id}', 'norte', ${c}, ${r})" />`;
+                    } else {
+                        // Desenha uma linha tracejada bem fina só para o usuário ver que ali era uma parede
+                        svg += `<line x1="${x}" y1="${y}" x2="${x+cellW}" y2="${y}" stroke="var(--border)" stroke-width="1" stroke-dasharray="2,2" />`;
+                    }
                 }
                 // Parede Sul (Base)
                 if (r === size-1 || !amb.grid[r+1][c]) {
-                    svg += `<line x1="${x}" y1="${y+cellH}" x2="${x+cellW}" y2="${y+cellH}" class="wall-edge" onclick="app.editarParedeDesenho('${amb.id}', 'sul', ${c}, ${r})" />`;
+                    if (!checkOculta('sul')) {
+                        svg += `<line x1="${x}" y1="${y+cellH}" x2="${x+cellW}" y2="${y+cellH}" class="wall-edge" onclick="app.editarParedeDesenho('${amb.id}', 'sul', ${c}, ${r})" />`;
+                    }
                 }
                 // Parede Oeste (Esquerda)
                 if (c === 0 || !amb.grid[r][c-1]) {
-                    svg += `<line x1="${x}" y1="${y}" x2="${x}" y2="${y+cellH}" class="wall-edge" onclick="app.editarParedeDesenho('${amb.id}', 'oeste', ${c}, ${r})" />`;
+                    if (!checkOculta('oeste')) {
+                        svg += `<line x1="${x}" y1="${y}" x2="${x}" y2="${y+cellH}" class="wall-edge" onclick="app.editarParedeDesenho('${amb.id}', 'oeste', ${c}, ${r})" />`;
+                    }
                 }
                 // Parede Leste (Direita)
                 if (c === size-1 || !amb.grid[r][c+1]) {
-                    svg += `<line x1="${x+cellW}" y1="${y}" x2="${x+cellW}" y2="${y+cellH}" class="wall-edge" onclick="app.editarParedeDesenho('${amb.id}', 'leste', ${c}, ${r})" />`;
+                    if (!checkOculta('leste')) {
+                        svg += `<line x1="${x+cellW}" y1="${y}" x2="${x+cellW}" y2="${y+cellH}" class="wall-edge" onclick="app.editarParedeDesenho('${amb.id}', 'leste', ${c}, ${r})" />`;
+                    }
                 }
             }
         }
@@ -715,6 +733,104 @@ const app = {
         container.innerHTML = svg;
     },
 
+    editarParedeDesenho(ambId, direcao, col, row) {
+        if (this._isEditingPlanta) return;
+        const amb = this.data.ambientes.find(a => a.id === ambId);
+        if (!amb) return;
+
+        const wallId = `auto_${direcao}_${row}_${col}`;
+        let parede = amb.paredes?.find(p => p.id === wallId);
+        
+        const nomePadrao = `Parede ${direcao.charAt(0).toUpperCase() + direcao.slice(1)}`;
+        
+        // Cria a janela de opções (Bottom Sheet)
+        let modal = document.getElementById('parede-options-modal');
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = 'parede-options-modal';
+            modal.className = 'action-sheet-overlay';
+            modal.onclick = (e) => { if (e.target === modal) app.closeParedeOptions(); };
+            document.body.appendChild(modal);
+        }
+
+        modal.innerHTML = `
+            <div class="action-sheet">
+                <h3>${nomePadrao} (${(direcao === 'norte' || direcao === 'sul') ? 'Horizontal' : 'Vertical'})</h3>
+                <button class="action-btn" onclick="app.editarAlturaParede('${ambId}', '${direcao}', ${col}, ${row})">
+                    📏 Definir Altura ${parede ? `(${parede.alt}m)` : ''}
+                </button>
+                <button class="action-btn danger" onclick="app.ocultarParede('${ambId}', '${wallId}')">
+                    🚫 Ocultar (Vão Aberto)
+                </button>
+                <button class="action-btn cancel" onclick="app.closeParedeOptions()">Cancelar</button>
+            </div>
+        `;
+        modal.classList.add('active');
+        this.haptic('light');
+    },
+
+    closeParedeOptions() {
+        const modal = document.getElementById('parede-options-modal');
+        if (modal) modal.classList.remove('active');
+    },
+
+    editarAlturaParede(ambId, direcao, col, row) {
+        this.closeParedeOptions();
+        const amb = this.data.ambientes.find(a => a.id === ambId);
+        if (!amb) return;
+
+        const wallId = `auto_${direcao}_${row}_${col}`;
+        let parede = amb.paredes?.find(p => p.id === wallId);
+        const nomePadrao = `Parede ${direcao.charAt(0).toUpperCase() + direcao.slice(1)}`;
+
+        const alturaStr = prompt(`Altura da ${nomePadrao} (em metros):`, parede ? parede.alt : "2.70");
+        if (alturaStr === null) return;
+
+        const altura = parseFloat(alturaStr) || 2.70;
+        let comp = 1; 
+        
+        if (amb.comp && amb.larg) {
+            const isHorizontal = (direcao === 'norte' || direcao === 'sul');
+            const tamanhoTotal = isHorizontal ? amb.comp : amb.larg;
+            comp = tamanhoTotal / 6; // Divide pela grade de 6x6
+        }
+
+        if (parede) {
+            parede.alt = altura;
+        } else {
+            if (!amb.paredes) amb.paredes = [];
+            amb.paredes.push({ id: wallId, nome: nomePadrao, comp: comp, alt: altura });
+        }
+
+        this.saveLocal();
+        this.syncToFirebase();
+        this.renderParedes(amb);
+        this.desenharPlantaAmbiente(amb);
+        this.showToast(`${nomePadrao} salva`, 'success');
+        this.haptic('medium');
+    },
+
+    ocultarParede(ambId, wallId) {
+        this.closeParedeOptions();
+        if (!this.data.paredesOcultas) this.data.paredesOcultas = [];
+        
+        if (!this.data.paredesOcultas.includes(wallId)) {
+            this.data.paredesOcultas.push(wallId);
+        }
+
+        // Remove a parede da lista de medidas se ela existia
+        const amb = this.data.ambientes.find(a => a.id === ambId);
+        if (amb && amb.paredes) {
+            amb.paredes = amb.paredes.filter(p => p.id !== wallId);
+            this.renderParedes(amb);
+        }
+
+        this.saveLocal();
+        this.syncToFirebase();
+        this.desenharPlantaAmbiente(amb);
+        this.showToast("Parede oculta (vão aberto)", 'warning');
+        this.haptic('heavy');
+    },
     _renderEditorGrid(container, amb, w, h, size) {
         const cellW = w / size;
         const cellH = h / size;
@@ -792,49 +908,7 @@ const app = {
         this.desenharPlantaAmbiente(amb);
     },
 
-    editarParedeDesenho(ambId, direcao, col, row) {
-        if (this._isEditingPlanta) return; // Se estiver editando o grid, não deixa editar parede
-        const amb = this.data.ambientes.find(a => a.id === ambId);
-        if (!amb) return;
-
-        // Cria um ID único para a parede baseada na posição
-        const wallId = `auto_${direcao}_${row}_${col}`;
-        let parede = amb.paredes?.find(p => p.id === wallId);
-        
-        const nomePadrao = `Parede ${direcao.charAt(0).toUpperCase() + direcao.slice(1)}`;
-        const alturaStr = prompt(`Altura da ${nomePadrao} (em metros):`, parede ? parede.alt : "2.70");
-        if (alturaStr === null) return;
-
-        const altura = parseFloat(alturaStr) || 2.70;
-
-        // O comprimento de cada quadrado depende da medida real do ambiente
-        let comp = 1; 
-        if (amb.comp && amb.larg) {
-            // Verifica qual lado do grid o usuário está medindo (horizontal = comp, vertical = larg)
-            const isHorizontal = (direcao === 'norte' || direcao === 'sul');
-            const tamanhoTotal = isHorizontal ? amb.comp : amb.larg;
-            comp = tamanhoTotal / 6; // Divide pela quantidade de quadrados (6)
-        }
-
-        if (parede) {
-            parede.alt = altura;
-        } else {
-            if (!amb.paredes) amb.paredes = [];
-            amb.paredes.push({
-                id: wallId,
-                nome: nomePadrao,
-                comp: comp,
-                alt: altura
-            });
-        }
-
-        this.saveLocal();
-        this.syncToFirebase();
-        this.renderParedes(amb);
-        this.desenharPlantaAmbiente(amb);
-        this.showToast(`${nomePadrao} salva`, 'success');
-        this.haptic('medium');
-    },
+    
     
     removeParede(id) {
         if (!confirm("Excluir esta parede?")) return;
