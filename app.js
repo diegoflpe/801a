@@ -5,19 +5,19 @@ import { getFirestore, doc, setDoc, getDoc, onSnapshot, enableIndexedDbPersisten
 // FIREBASE CONFIG (COLOQUE SUAS CHAVES AQUI)
 // ==========================================
 const firebaseConfig = {
-  apiKey: "AIzaSyBxhp9c0GHGX0JHEjda9CBmuKTfD0MdQrg",
-  authDomain: "measurements-bf85a.firebaseapp.com",
-  projectId: "measurements-bf85a",
-  storageBucket: "measurements-bf85a.firebasestorage.app",
-  messagingSenderId: "116446528416",
-  appId: "1:116446528416:web:eefd425fe30e3fb75c1ac5"
+  apiKey: "SEU_API_KEY_AQUI",
+  authDomain: "SEU_PROJETO.firebaseapp.com",
+  projectId: "SEU_PROJETO_ID",
+  storageBucket: "SEU_PROJETO.appspot.com",
+  messagingSenderId: "SEU_SENDER_ID",
+  appId: "SEU_APP_ID"
 };
 const firebaseApp = initializeApp(firebaseConfig);
 const db = getFirestore(firebaseApp);
 enableIndexedDbPersistence(db).catch((err) => console.warn("Offline:", err.code));
 
 // ==========================================
-// CHECKLISTS CONTEXTUAIS (Mantidos)
+// CHECKLISTS CONTEXTUAIS
 // ==========================================
 const CHECKLISTS_CONTEXTUAIS = {
     banheiro: { label: "Banheiro / Lavabo", sections: [
@@ -78,7 +78,7 @@ function detectTipoAmbiente(nome) {
 // ==========================================
 const app = {
     data: {
-        projeto: { id: "apto801A", nome: "Love 801A 💝", dataVisita: new Date().toISOString().split('T')[0] },
+        projeto: { id: "apto101", nome: "Apto Tipo 02", dataVisita: new Date().toISOString().split('T')[0] },
         ambientes: [],
         checklist: [],
         plantaImagem: null,
@@ -86,7 +86,7 @@ const app = {
         divergencias: [],
         marcenaria: [],
         vistoria: { preparacao: {}, ambientes: {}, obsGeral: {} },
-        paredesOcultas: [],
+        paredesOcultas: [] // NOVO: Armazena as paredes que são vãos abertos
     },
     currentAmbienteId: null,
     currentTab: 'tab-geral',
@@ -95,7 +95,8 @@ const app = {
     qm: { tipo: null, ambienteId: null, paredeId: null, count: 0 },
     div: { fotoTemp: null },
     _unsynced: false,
-    _isSyncing: false, // Evita loop de sincronização
+    _isSyncing: false,
+    _currentWallData: null, // Guarda dados temporários da parede clicada
 
     planta: {
         scale: 1, tx: 0, ty: 0, minScale: 0.5, maxScale: 5,
@@ -109,8 +110,8 @@ const app = {
         this.renderAll();
         
         if (navigator.onLine) {
-            await this.syncFromFirebase(); // Busca inicial
-            this.listenToFirebase();       // Fica escutando em tempo real
+            await this.syncFromFirebase();
+            this.listenToFirebase();
         }
         
         window.addEventListener('online', () => { this.updateSaveStatus('Sincronizando...', 'syncing'); this.syncToFirebase(); });
@@ -127,12 +128,14 @@ const app = {
         container.appendChild(toast);
         setTimeout(() => { toast.classList.add('hide'); setTimeout(() => toast.remove(), 300); }, duration);
     },
+    
     haptic(intensity = 'light') {
         if (navigator.vibrate) {
             const patterns = { light: [10], medium: [20], heavy: [30] };
             navigator.vibrate(patterns[intensity] || [10]);
         }
     },
+    
     markUnsynced() {
         if (this._isSyncing) return;
         this._unsynced = true;
@@ -146,6 +149,7 @@ const app = {
             this.markUnsynced();
         } catch (e) { this.showToast("Erro ao salvar. Armazenamento cheio.", 'error'); }
     },
+    
     loadLocalData() {
         const saved = localStorage.getItem('vistoriaAppData');
         if (saved) {
@@ -156,7 +160,6 @@ const app = {
             if (!this.data.vistoria) this.data.vistoria = { preparacao: {}, ambientes: {}, obsGeral: {} };
             if (!this.data.paredesOcultas) this.data.paredesOcultas = [];
         } else {
-            // Dados iniciais (só roda se não tiver nada salvo)
             this.data.ambientes = [
                 { id: '1', nome: 'Estar/Jantar', comp: 4.26, larg: 2.40, peDireito: null, paredes: [], elementos: [], fotos: [], checklistCtx: {} },
                 { id: '2', nome: 'Cozinha', comp: 4.33, larg: 1.60, peDireito: null, paredes: [], elementos: [], fotos: [], checklistCtx: {} },
@@ -178,6 +181,7 @@ const app = {
             this.data.divergencias = [];
             this.data.marcenaria = [];
             this.data.vistoria = { preparacao: {}, ambientes: {}, obsGeral: {} };
+            this.data.paredesOcultas = [];
             this.saveLocal();
         }
     },
@@ -205,77 +209,51 @@ const app = {
 
     async syncFromFirebase() {
         if (!navigator.onLine) return;
-        this.updateSaveStatus('Buscando...', 'syncing');
         try {
             const docRef = doc(db, "projetos", this.data.projeto.id);
             const docSnap = await getDoc(docRef);
-            
-            if (docSnap.exists()) {
-                this.applyCloudData(docSnap.data(), true);
-            } else {
-                this.updateSaveStatus('Sincronizado', 'saved');
-            }
-        } catch (e) {
-            console.error("Erro ao baixar da nuvem:", e);
-            this.updateSaveStatus('Erro nuvem', 'unsynced');
-        }
+            if (docSnap.exists()) this.applyCloudData(docSnap.data(), false);
+        } catch (e) { console.error("Erro ao baixar da nuvem:", e); }
     },
 
     listenToFirebase() {
         const docRef = doc(db, "projetos", this.data.projeto.id);
         onSnapshot(docRef, (docSnap) => {
-            // Se chegou um dado novo da nuvem e NÃO fomos nós que acabamos de salvar
-            if (docSnap.exists()) {
+            if (docSnap.exists() && !this._isSyncing) {
                 const dataNuvem = docSnap.data();
-                
-                // Compara se o dado da nuvem é diferente do local para não dar loop
                 const nuvemString = JSON.stringify(dataNuvem.ambientes);
                 const localString = JSON.stringify(this.data.ambientes.map(a => { const c = {...a}; c.fotos = []; return c; }));
                 
                 if (nuvemString !== localString) {
-                    this.applyCloudData(dataNuvem, false); // Atualiza sem mostrar o toast para não encher a tela
+                    this.applyCloudData(dataNuvem, false);
                 }
             }
         });
     },
 
-        applyCloudData(dataNuvem, showToast = true) {
+    applyCloudData(dataNuvem, showToast = true) {
         let changed = false;
-        
-        // 1. Sincroniza Ambientes (incluindo novos e excluídos)
         if (dataNuvem.ambientes) {
-            // Pega as fotos que estão no aparelho atual para não perder
             const fotosLocais = {};
-            this.data.ambientes.forEach(amb => {
-                if (amb.fotos && amb.fotos.length > 0) fotosLocais[amb.id] = amb.fotos;
-            });
-
-            // Substitui a lista inteira pela da nuvem
+            this.data.ambientes.forEach(amb => { if (amb.fotos && amb.fotos.length > 0) fotosLocais[amb.id] = amb.fotos; });
             this.data.ambientes = dataNuvem.ambientes.map(ambNuvem => {
-                // Se o ambiente da nuvem tiver fotos salvas no celular, recoloca elas
-                if (fotosLocais[ambNuvem.id]) {
-                    ambNuvem.fotos = fotosLocais[ambNuvem.id];
-                } else {
-                    ambNuvem.fotos = ambNuvem.fotos || [];
-                }
+                if (fotosLocais[ambNuvem.id]) ambNuvem.fotos = fotosLocais[ambNuvem.id];
+                else ambNuvem.fotos = ambNuvem.fotos || [];
                 return ambNuvem;
             });
             changed = true;
         }
-        
-        // 2. Sincroniza o resto dos dados
         if (dataNuvem.divergencias) { this.data.divergencias = dataNuvem.divergencias; changed = true; }
         if (dataNuvem.vistoria) { this.data.vistoria = dataNuvem.vistoria; changed = true; }
         if (dataNuvem.marcenaria) { this.data.marcenaria = dataNuvem.marcenaria; changed = true; }
         if (dataNuvem.checklist) { this.data.checklist = dataNuvem.checklist; changed = true; }
         if (dataNuvem.plantaPins) { this.data.plantaPins = dataNuvem.plantaPins; changed = true; }
+        if (dataNuvem.paredesOcultas) { this.data.paredesOcultas = dataNuvem.paredesOcultas; changed = true; }
 
-        // 3. Atualiza a tela e salva no celular
         if (changed) {
             localStorage.setItem('vistoriaAppData', JSON.stringify(this.data));
             this.renderAll(); 
             this.updateSaveStatus('Sincronizado', 'saved');
-            
             if (showToast) this.showToast("Dados atualizados", 'success');
         }
     },
@@ -302,6 +280,7 @@ const app = {
         if (viewName === 'marcenaria') this.renderMarcenariaPage();
         if (viewName === 'vistoria') this.renderVistoriaPage();
     },
+
     switchTab(tabId, event) {
         this.currentTab = tabId;
         document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
@@ -310,8 +289,13 @@ const app = {
         if (tab) tab.classList.add('active');
         if (event && event.target) event.target.classList.add('active');
         if (tabId === 'tab-checklist-ctx') this.renderChecklistContextual();
+        if (tabId === 'tab-paredes') {
+            const amb = this.data.ambientes.find(a => a.id === this.currentAmbienteId);
+            if (amb) setTimeout(() => this.desenharPlantaAmbiente(amb), 100);
+        }
         this.haptic('light');
     },
+
     switchTabProgrammatic(tabId) {
         document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
         document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
@@ -320,6 +304,7 @@ const app = {
         const btn = document.querySelector(`.tab-btn[onclick*="${tabId}"]`);
         if (btn) btn.classList.add('active');
     },
+
     switchTabRelatorio(tabId, event) {
         this.currentRelatorio = tabId;
         document.querySelectorAll('#view-relatorio .tab-btn').forEach(el => el.classList.remove('active'));
@@ -334,7 +319,7 @@ const app = {
         const dateEl = document.getElementById('dash-date');
         if (dateEl) dateEl.textContent = this.data.projeto.dataVisita;
     },
-    
+
     renderDashboard() {
         let totalItens = 0, medidos = 0, totalParedes = 0;
         this.data.ambientes.forEach(amb => {
@@ -378,7 +363,7 @@ const app = {
                 const mini = document.createElement('div');
                 mini.className = `amb-mini-card status-${status}`;
                 mini.onclick = () => this.openAmbiente(amb.id);
-                mini.innerHTML = `<div class="mini-nome">${amb.nome}</div><div class="mini-sub">${amb.comp && amb.larg ? (amb.comp * amb.larg).toFixed(1) + ' m²' : 'Sem medidas'}</div>`;
+                mini.innerHTML = `<div class="mini-nome">${amb.nome}</div><div class="mini-sub">${amb.comp && amb.larg ? (amb.comp * amb.larg).toFixed(1) + ' m²' : 'Pendente'}</div>`;
                 grid.appendChild(mini);
             });
         }
@@ -403,7 +388,7 @@ const app = {
         if (elDef) elDef.textContent = vistDefeito;
         if (elPend) elPend.textContent = vistPendente;
     },
-    
+
     ambStatus(amb) {
         const hasDim = !!(amb.comp && amb.larg && amb.peDireito);
         const hasParedes = (amb.paredes?.length || 0) > 0;
@@ -411,8 +396,8 @@ const app = {
         if (hasDim || hasParedes) return 'amarelo';
         return 'vermelho';
     },
-    
-        renderAmbientes() {
+
+    renderAmbientes() {
         const container = document.getElementById('ambientes-list');
         if (!container) return;
         const searchEl = document.getElementById('amb-search');
@@ -432,7 +417,6 @@ const app = {
             
             const div = document.createElement('div');
             div.className = 'amb-card-premium';
-            // O clique no card abre a ficha
             div.onclick = () => this.openAmbiente(amb.id);
             
             div.innerHTML = `
@@ -451,7 +435,7 @@ const app = {
             container.appendChild(div);
         });
     },
-    
+
     renderChecklist() {
         const container = document.getElementById('checklist-items');
         if (!container) return;
@@ -490,20 +474,16 @@ const app = {
         this.calcArea(amb);
         this.renderFotos(amb);
         this.renderParedes(amb);
-        this.desenharPlantaAmbiente(amb);
         this.renderElementos(amb);
         this.populateParedeSelect(amb);
         this.navigate('ambiente-detalhe');
         this.switchTabProgrammatic('tab-geral');
-
-                setTimeout(() => {
-            this.desenharPlantaAmbiente(amb);
-        }, 300);
-
+        
+        setTimeout(() => { this.desenharPlantaAmbiente(amb); }, 300);
     },
-    
-        addAmbiente() {
-        const nome = prompt("Nome do novo ambiente:", ""); // Deixei vazio
+
+    addAmbiente() {
+        const nome = prompt("Nome do novo ambiente:", "");
         if (!nome || nome.trim() === '') return;
         this.data.ambientes.push({ id: Date.now().toString(), nome: nome.trim(), comp: null, larg: null, peDireito: null, paredes: [], elementos: [], fotos: [], checklistCtx: {} });
         this.saveLocal(); this.syncToFirebase();
@@ -511,86 +491,19 @@ const app = {
         this.showToast("Ambiente adicionado", 'success'); this.haptic('medium');
     },
 
-        openAmbienteOptions(event, id) {
-        event.stopPropagation(); // Evita que abra a ficha ao clicar nos 3 pontinhos
-        const amb = this.data.ambientes.find(a => a.id === id);
-        if (!amb) return;
-
-        let modal = document.getElementById('amb-options-modal');
-        if (!modal) {
-            modal = document.createElement('div');
-            modal.id = 'amb-options-modal';
-            modal.className = 'action-sheet-overlay';
-            modal.onclick = (e) => { if (e.target === modal) this.closeAmbienteOptions(); };
-            document.body.appendChild(modal);
-        }
-
-        modal.innerHTML = `
-            <div class="action-sheet">
-                <h3>${amb.nome}</h3>
-                <button class="action-btn" onclick="app.editAmbiente('${amb.id}')">
-                    ✏️ Editar Nome
-                </button>
-                <button class="action-btn danger" onclick="app.deleteAmbiente('${amb.id}')">
-                    🗑️ Excluir Ambiente
-                </button>
-                <button class="action-btn cancel" onclick="app.closeAmbienteOptions()">Cancelar</button>
-            </div>
-        `;
-        modal.classList.add('active');
-        this.haptic('light');
-    },
-
-    closeAmbienteOptions() {
-        const modal = document.getElementById('amb-options-modal');
-        if (modal) modal.classList.remove('active');
-    },
-
-    editAmbiente(id) {
-        this.closeAmbienteOptions();
-        const amb = this.data.ambientes.find(a => a.id === id);
-        if (!amb) return;
-        
-        const novoNome = prompt("Novo nome do ambiente:", amb.nome);
-        if (novoNome && novoNome.trim() !== '') {
-            amb.nome = novoNome.trim();
-            this.saveLocal();
-            this.syncToFirebase();
-            this.renderAmbientes();
-            this.renderDashboard();
-            this.showToast("Nome atualizado", 'success');
-            this.haptic('medium');
-        }
-    },
-
-    deleteAmbiente(id) {
-        this.closeAmbienteOptions();
-        const amb = this.data.ambientes.find(a => a.id === id);
-        if (!amb) return;
-        
-        if (!confirm(`Tem certeza que deseja excluir o ambiente "${amb.nome}"?\n\nTodas as paredes, fotos e elementos dele serão apagados permanentemente.`)) return;
-        
-        this.data.ambientes = this.data.ambientes.filter(a => a.id !== id);
-        // Remove pins associados a este ambiente na planta
-        this.data.plantaPins = this.data.plantaPins.filter(p => p.ambienteId !== id);
-        
-        this.saveLocal();
-        this.syncToFirebase();
-        this.renderAmbientes();
-        this.renderDashboard();
-        this.showToast("Ambiente excluído", 'warning');
-        this.haptic('heavy');
-    },
-    
     saveAmbienteDimensoes() {
         const amb = this.data.ambientes.find(a => a.id === this.currentAmbienteId);
         if (!amb) return;
         amb.comp = parseFloat(document.getElementById('amb-comprimento').value) || null;
         amb.larg = parseFloat(document.getElementById('amb-largura').value) || null;
         amb.peDireito = parseFloat(document.getElementById('amb-pe-direito').value) || null;
-        this.calcArea(amb); this.saveLocal(); this.syncToFirebase(); this.haptic('light');
+        this.calcArea(amb); 
+        this.saveLocal(); 
+        this.syncToFirebase(); 
+        this.haptic('light');
+        setTimeout(() => { this.desenharPlantaAmbiente(amb); }, 100);
     },
-    
+
     calcArea(amb) {
         const el = document.getElementById('amb-area-calc');
         if (!el) return;
@@ -616,7 +529,7 @@ const app = {
         this.renderParedes(amb); this.populateParedeSelect(amb);
         this.showToast("Parede adicionada", 'success'); this.haptic('medium');
     },
-    
+
     renderParedes(amb) {
         const container = document.getElementById('paredes-list');
         if (!container) return;
@@ -637,279 +550,6 @@ const app = {
         });
     },
 
-                // ==========================================
-    // DESENHO E EDIÇÃO DA PLANTA DO AMBIENTE
-    // ==========================================
-    desenharPlantaAmbiente(amb) {
-        const container = document.getElementById('svg-planta-ambiente');
-        if (!container) return;
-
-        let containerW = container.clientWidth;
-        let containerH = container.clientHeight;
-        if (containerW === 0) {
-            setTimeout(() => this.desenharPlantaAmbiente(amb), 100);
-            return;
-        }
-
-        // Grade padrão 6x6 (36 quadrados)
-        const gridSize = 6;
-        
-        // Se o ambiente não tem um desenho salvo, começa com um retângulo (4x4 no centro)
-        if (!amb.grid) {
-            amb.grid = Array(gridSize).fill().map(() => Array(gridSize).fill(false));
-            for(let r=1; r<=4; r++) {
-                for(let c=1; c<=4; c++) {
-                    amb.grid[r][c] = true;
-                }
-            }
-        }
-
-        if (this._isEditingPlanta) {
-            this._renderEditorGrid(container, amb, containerW, containerH, gridSize);
-        } else {
-            this._renderPlantaSalva(container, amb, containerW, containerH, gridSize);
-        }
-    },
-
-    _renderPlantaSalva(container, amb, w, h, size) {
-        const cellW = w / size;
-        const cellH = h / size;
-        
-        let svg = `<svg width="100%" height="100%" viewBox="0 0 ${w} ${h}" style="font-family: -apple-system, sans-serif;">`;
-
-        // 1. Desenha o piso (quadrados preenchidos)
-        for (let r = 0; r < size; r++) {
-            for (let c = 0; c < size; c++) {
-                if (amb.grid[r][c]) {
-                    svg += `<rect x="${c*cellW}" y="${r*cellH}" width="${cellW}" height="${cellH}" fill="rgba(0, 122, 255, 0.05)" stroke="var(--border)" stroke-width="1"/>`;
-                }
-            }
-        }
-
-        // 2. Desenha as paredes (bordas onde há transição)
-        for (let r = 0; r < size; r++) {
-            for (let c = 0; c < size; c++) {
-                if (!amb.grid[r][c]) continue;
-                
-                const x = c * cellW;
-                const y = r * cellH;
-                
-                const checkOculta = (dir) => {
-                    const id = `auto_${dir}_${r}_${c}`;
-                    return this.data.paredesOcultas.includes(id);
-                };
-
-                // Parede Norte (Topo)
-                if (r === 0 || !amb.grid[r-1][c]) {
-                    if (!checkOculta('norte')) {
-                        svg += `<line x1="${x}" y1="${y}" x2="${x+cellW}" y2="${y}" class="wall-edge" onclick="app.editarParedeDesenho('${amb.id}', 'norte', ${c}, ${r})" />`;
-                    } else {
-                        // Desenha uma linha tracejada bem fina só para o usuário ver que ali era uma parede
-                        svg += `<line x1="${x}" y1="${y}" x2="${x+cellW}" y2="${y}" stroke="var(--border)" stroke-width="1" stroke-dasharray="2,2" />`;
-                    }
-                }
-                // Parede Sul (Base)
-                if (r === size-1 || !amb.grid[r+1][c]) {
-                    if (!checkOculta('sul')) {
-                        svg += `<line x1="${x}" y1="${y+cellH}" x2="${x+cellW}" y2="${y+cellH}" class="wall-edge" onclick="app.editarParedeDesenho('${amb.id}', 'sul', ${c}, ${r})" />`;
-                    }
-                }
-                // Parede Oeste (Esquerda)
-                if (c === 0 || !amb.grid[r][c-1]) {
-                    if (!checkOculta('oeste')) {
-                        svg += `<line x1="${x}" y1="${y}" x2="${x}" y2="${y+cellH}" class="wall-edge" onclick="app.editarParedeDesenho('${amb.id}', 'oeste', ${c}, ${r})" />`;
-                    }
-                }
-                // Parede Leste (Direita)
-                if (c === size-1 || !amb.grid[r][c+1]) {
-                    if (!checkOculta('leste')) {
-                        svg += `<line x1="${x+cellW}" y1="${y}" x2="${x+cellW}" y2="${y+cellH}" class="wall-edge" onclick="app.editarParedeDesenho('${amb.id}', 'leste', ${c}, ${r})" />`;
-                    }
-                }
-            }
-        }
-
-        svg += `</svg>`;
-        container.innerHTML = svg;
-    },
-
-    editarParedeDesenho(ambId, direcao, col, row) {
-        if (this._isEditingPlanta) return;
-        const amb = this.data.ambientes.find(a => a.id === ambId);
-        if (!amb) return;
-
-        const wallId = `auto_${direcao}_${row}_${col}`;
-        let parede = amb.paredes?.find(p => p.id === wallId);
-        
-        const nomePadrao = `Parede ${direcao.charAt(0).toUpperCase() + direcao.slice(1)}`;
-        
-        // Cria a janela de opções (Bottom Sheet)
-        let modal = document.getElementById('parede-options-modal');
-        if (!modal) {
-            modal = document.createElement('div');
-            modal.id = 'parede-options-modal';
-            modal.className = 'action-sheet-overlay';
-            modal.onclick = (e) => { if (e.target === modal) app.closeParedeOptions(); };
-            document.body.appendChild(modal);
-        }
-
-        modal.innerHTML = `
-            <div class="action-sheet">
-                <h3>${nomePadrao} (${(direcao === 'norte' || direcao === 'sul') ? 'Horizontal' : 'Vertical'})</h3>
-                <button class="action-btn" onclick="app.editarAlturaParede('${ambId}', '${direcao}', ${col}, ${row})">
-                    📏 Definir Altura ${parede ? `(${parede.alt}m)` : ''}
-                </button>
-                <button class="action-btn danger" onclick="app.ocultarParede('${ambId}', '${wallId}')">
-                    🚫 Ocultar (Vão Aberto)
-                </button>
-                <button class="action-btn cancel" onclick="app.closeParedeOptions()">Cancelar</button>
-            </div>
-        `;
-        modal.classList.add('active');
-        this.haptic('light');
-    },
-
-    closeParedeOptions() {
-        const modal = document.getElementById('parede-options-modal');
-        if (modal) modal.classList.remove('active');
-    },
-
-    editarAlturaParede(ambId, direcao, col, row) {
-        this.closeParedeOptions();
-        const amb = this.data.ambientes.find(a => a.id === ambId);
-        if (!amb) return;
-
-        const wallId = `auto_${direcao}_${row}_${col}`;
-        let parede = amb.paredes?.find(p => p.id === wallId);
-        const nomePadrao = `Parede ${direcao.charAt(0).toUpperCase() + direcao.slice(1)}`;
-
-        const alturaStr = prompt(`Altura da ${nomePadrao} (em metros):`, parede ? parede.alt : "2.70");
-        if (alturaStr === null) return;
-
-        const altura = parseFloat(alturaStr) || 2.70;
-        let comp = 1; 
-        
-        if (amb.comp && amb.larg) {
-            const isHorizontal = (direcao === 'norte' || direcao === 'sul');
-            const tamanhoTotal = isHorizontal ? amb.comp : amb.larg;
-            comp = tamanhoTotal / 6; // Divide pela grade de 6x6
-        }
-
-        if (parede) {
-            parede.alt = altura;
-        } else {
-            if (!amb.paredes) amb.paredes = [];
-            amb.paredes.push({ id: wallId, nome: nomePadrao, comp: comp, alt: altura });
-        }
-
-        this.saveLocal();
-        this.syncToFirebase();
-        this.renderParedes(amb);
-        this.desenharPlantaAmbiente(amb);
-        this.showToast(`${nomePadrao} salva`, 'success');
-        this.haptic('medium');
-    },
-
-    ocultarParede(ambId, wallId) {
-        this.closeParedeOptions();
-        if (!this.data.paredesOcultas) this.data.paredesOcultas = [];
-        
-        if (!this.data.paredesOcultas.includes(wallId)) {
-            this.data.paredesOcultas.push(wallId);
-        }
-
-        // Remove a parede da lista de medidas se ela existia
-        const amb = this.data.ambientes.find(a => a.id === ambId);
-        if (amb && amb.paredes) {
-            amb.paredes = amb.paredes.filter(p => p.id !== wallId);
-            this.renderParedes(amb);
-        }
-
-        this.saveLocal();
-        this.syncToFirebase();
-        this.desenharPlantaAmbiente(amb);
-        this.showToast("Parede oculta (vão aberto)", 'warning');
-        this.haptic('heavy');
-    },
-    _renderEditorGrid(container, amb, w, h, size) {
-        const cellW = w / size;
-        const cellH = h / size;
-        let svg = `<svg width="100%" height="100%" viewBox="0 0 ${w} ${h}" style="font-family: -apple-system, sans-serif;">`;
-
-        for (let r = 0; r < size; r++) {
-            for (let c = 0; c < size; c++) {
-                const isAtivo = amb.grid[r][c] ? 'active' : '';
-                svg += `<rect x="${c*cellW}" y="${r*cellH}" width="${cellW}" height="${cellH}" class="grid-cell ${isAtivo}" onclick="app.toggleCelulaGrid(${r}, ${c})" />`;
-            }
-        }
-
-        svg += `</svg>`;
-        container.innerHTML = svg;
-    },
-
-    toggleEditorPlanta() {
-        this._isEditingPlanta = !this._isEditingPlanta;
-        const amb = this.data.ambientes.find(a => a.id === this.currentAmbienteId);
-        if (!amb) return;
-
-        const btn = document.getElementById('btn-editar-planta');
-        const controles = document.getElementById('editor-controles');
-        
-        if (this._isEditingPlanta) {
-            // Faz um backup temporário caso cancele
-            this._backupGrid = JSON.parse(JSON.stringify(amb.grid));
-            btn.textContent = "✏️ Editando...";
-            controles.style.display = 'block';
-            this.desenharPlantaAmbiente(amb);
-        } else {
-            btn.textContent = "✏️ Desenhar";
-            controles.style.display = 'none';
-            this.desenharPlantaAmbiente(amb);
-        }
-    },
-
-    toggleCelulaGrid(r, c) {
-        const amb = this.data.ambientes.find(a => a.id === this.currentAmbienteId);
-        if (!amb) return;
-        amb.grid[r][c] = !amb.grid[r][c];
-        this.desenharPlantaAmbiente(amb); // Redesenha na hora
-        this.haptic('light');
-    },
-
-    salvarDesenhoPlanta() {
-        this._isEditingPlanta = false;
-        document.getElementById('btn-editar-planta').textContent = "✏️ Desenhar";
-        document.getElementById('editor-controles').style.display = 'none';
-        
-        const amb = this.data.ambientes.find(a => a.id === this.currentAmbienteId);
-        if (!amb) return;
-
-        // Limpa paredes antigas geradas automaticamente para não duplicar
-        if (amb.paredes) {
-            amb.paredes = amb.paredes.filter(p => !p.nome.includes('(Parede)') && !p.id.startsWith('auto_'));
-        }
-
-        // Salva os dados e atualiza a tela
-        this.saveLocal();
-        this.syncToFirebase();
-        this.desenharPlantaAmbiente(amb);
-        this.renderParedes(amb);
-        this.showToast("Formato do ambiente salvo", 'success');
-        this.haptic('medium');
-    },
-
-    cancelarDesenhoPlanta() {
-        const amb = this.data.ambientes.find(a => a.id === this.currentAmbienteId);
-        if (!amb) return;
-        amb.grid = this._backupGrid; // Restaura o backup
-        this._isEditingPlanta = false;
-        document.getElementById('btn-editar-planta').textContent = "✏️ Desenhar";
-        document.getElementById('editor-controles').style.display = 'none';
-        this.desenharPlantaAmbiente(amb);
-    },
-
-    
-    
     removeParede(id) {
         if (!confirm("Excluir esta parede?")) return;
         const amb = this.data.ambientes.find(a => a.id === this.currentAmbienteId);
@@ -919,6 +559,7 @@ const app = {
         this.saveLocal(); this.syncToFirebase();
         this.renderParedes(amb); this.renderElementos(amb); this.populateParedeSelect(amb);
         this.showToast("Parede removida", 'warning'); this.haptic('medium');
+        setTimeout(() => { this.desenharPlantaAmbiente(amb); }, 100);
     },
 
     populateParedeSelect(amb) {
@@ -927,7 +568,7 @@ const app = {
         select.innerHTML = '<option value="">Selecione...</option>';
         (amb.paredes || []).forEach(p => { select.innerHTML += `<option value="${p.id}">${p.nome}</option>`; });
     },
-    
+
     addElemento() {
         const paredeId = document.getElementById('elem-parede-select')?.value;
         const tipo = document.getElementById('elem-tipo')?.value;
@@ -946,7 +587,7 @@ const app = {
         this.renderElementos(amb); this.renderParedes(amb);
         this.showToast("Elemento adicionado", 'success'); this.haptic('medium');
     },
-    
+
     renderElementos(amb) {
         const container = document.getElementById('elementos-list');
         if (!container) return;
@@ -963,7 +604,7 @@ const app = {
             container.appendChild(div);
         });
     },
-    
+
     removeElemento(id) {
         if (!confirm("Excluir este elemento?")) return;
         const amb = this.data.ambientes.find(a => a.id === this.currentAmbienteId);
@@ -987,7 +628,7 @@ const app = {
         event.target.value = '';
         this.showToast("Foto adicionada", 'success'); this.haptic('medium');
     },
-    
+
     compressImage(file, maxWidth, quality) {
         return new Promise((resolve) => {
             const reader = new FileReader();
@@ -1006,19 +647,19 @@ const app = {
             };
         });
     },
-    
+
     renderFotos(amb) {
         const container = document.getElementById('fotos-gallery');
         if (!container) return;
         container.innerHTML = '';
         (amb.fotos || []).forEach(foto => { const img = document.createElement('img'); img.src = foto; container.appendChild(img); });
     },
-    
+
     updateChecklist(id, newStatus) {
         const item = this.data.checklist.find(c => c.id === id);
         if (item) { item.status = newStatus; this.saveLocal(); this.syncToFirebase(); this.renderDashboard(); this.haptic('light'); }
     },
-    
+
     exportBackup() {
         const dataStr = JSON.stringify(this.data, null, 2);
         const blob = new Blob([dataStr], { type: "application/json" });
@@ -1031,6 +672,273 @@ const app = {
         this.showToast("Backup exportado", 'success'); this.haptic('medium');
     },
 
+    openAmbienteOptions(event, id) {
+        event.stopPropagation(); 
+        const amb = this.data.ambientes.find(a => a.id === id);
+        if (!amb) return;
+
+        let modal = document.getElementById('amb-options-modal');
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = 'amb-options-modal';
+            modal.className = 'action-sheet-overlay';
+            modal.onclick = (e) => { if (e.target === modal) this.closeAmbienteOptions(); };
+            document.body.appendChild(modal);
+        }
+
+        modal.innerHTML = `
+            <div class="action-sheet">
+                <h3>${amb.nome}</h3>
+                <button class="action-btn" onclick="app.editAmbiente('${amb.id}')">✏️ Editar Nome</button>
+                <button class="action-btn danger" onclick="app.deleteAmbiente('${amb.id}')">🗑️ Excluir Ambiente</button>
+                <button class="action-btn cancel" onclick="app.closeAmbienteOptions()">Cancelar</button>
+            </div>
+        `;
+        modal.classList.add('active');
+        this.haptic('light');
+    },
+
+    closeAmbienteOptions() {
+        const modal = document.getElementById('amb-options-modal');
+        if (modal) modal.classList.remove('active');
+    },
+
+    editAmbiente(id) {
+        this.closeAmbienteOptions();
+        const amb = this.data.ambientes.find(a => a.id === id);
+        if (!amb) return;
+        const novoNome = prompt("Novo nome do ambiente:", amb.nome);
+        if (novoNome && novoNome.trim() !== '') {
+            amb.nome = novoNome.trim();
+            this.saveLocal(); this.syncToFirebase();
+            this.renderAmbientes(); this.renderDashboard();
+            this.showToast("Nome atualizado", 'success'); this.haptic('medium');
+        }
+    },
+
+    deleteAmbiente(id) {
+        this.closeAmbienteOptions();
+        const amb = this.data.ambientes.find(a => a.id === id);
+        if (!amb) return;
+        if (!confirm(`Tem certeza que deseja excluir o ambiente "${amb.nome}"?\n\nTodas as paredes, fotos e elementos dele serão apagados permanentemente.`)) return;
+        
+        this.data.ambientes = this.data.ambientes.filter(a => a.id !== id);
+        this.data.plantaPins = this.data.plantaPins.filter(p => p.ambienteId !== id);
+        
+        this.saveLocal(); this.syncToFirebase();
+        this.renderAmbientes(); this.renderDashboard();
+        this.showToast("Ambiente excluído", 'warning'); this.haptic('heavy');
+    },
+
+    // ==========================================
+    // DESENHO VETORIAL E MODAL DE PAREDE
+    // ==========================================
+        desenharPlantaAmbiente(amb) {
+        const container = document.getElementById('svg-planta-ambiente');
+        if (!container) return;
+
+        let containerW = container.clientWidth;
+        let containerH = container.clientHeight;
+        if (containerW === 0) { setTimeout(() => this.desenharPlantaAmbiente(amb), 100); return; }
+
+        if (!amb.comp || !amb.larg) {
+            container.innerHTML = `<div style="text-align:center; color:var(--text-light); padding:20px;"><div style="font-size:2rem; margin-bottom:8px;">📐</div><p style="font-size:0.85rem;">Preencha Comprimento e Largura na aba "Geral"<br>para desenhar a planta.</p></div>`;
+            return;
+        }
+
+        const comp = amb.comp;
+        const larg = amb.larg;
+        
+        const maxW = containerW - 100; 
+        const maxH = containerH - 100;
+        const scaleX = maxW / comp;
+        const scaleY = maxH / larg;
+        const scale = Math.min(scaleX, scaleY);
+        
+        const w = comp * scale;
+        const h = larg * scale;
+        
+        const cx = containerW / 2;
+        const cy = containerH / 2;
+        const left = cx - (w / 2);
+        const top = cy - (h / 2);
+        const right = left + w;
+        const bottom = top + h;
+
+        let svg = `<svg width="100%" height="100%" viewBox="0 0 ${containerW} ${containerH}" style="font-family: -apple-system, sans-serif;">`;
+
+        // Desenha as cotas (linhas de medida externas)
+        svg += `
+            <line x1="${left}" y1="${top - 25}" x2="${right}" y2="${top - 25}" class="dimension-line"/>
+            <line x1="${left}" y1="${top - 30}" x2="${left}" y2="${top - 20}" stroke="var(--border)"/>
+            <line x1="${right}" y1="${top - 30}" x2="${right}" y2="${top - 20}" stroke="var(--border)"/>
+            <text x="${cx}" y="${top - 32}" class="dimension-text">${comp.toFixed(2)} m</text>
+
+            <line x1="${right + 25}" y1="${top}" x2="${right + 25}" y2="${bottom}" class="dimension-line"/>
+            <line x1="${right + 20}" y1="${top}" x2="${right + 30}" y2="${top}" stroke="var(--border)"/>
+            <line x1="${right + 20}" y1="${bottom}" x2="${right + 30}" y2="${bottom}" stroke="var(--border)"/>
+            <text x="${right + 35}" y="${cy}" class="dimension-text" style="text-anchor: start;">${larg.toFixed(2)} m</text>
+        `;
+
+        // Verifica paredes salvas
+        const pNorte = amb.paredes?.find(p => p.nome.includes('Norte'));
+        const pSul = amb.paredes?.find(p => p.nome.includes('Sul'));
+        const pLeste = amb.paredes?.find(p => p.nome.includes('Leste'));
+        const pOeste = amb.paredes?.find(p => p.nome.includes('Oeste'));
+
+        const cNorte = pNorte ? 'var(--primary)' : 'var(--text)';
+        const cSul = pSul ? 'var(--primary)' : 'var(--text)';
+        const cLeste = pLeste ? 'var(--primary)' : 'var(--text)';
+        const cOeste = pOeste ? 'var(--primary)' : 'var(--text)';
+
+        // Desenha o fundo do piso
+        svg += `<polygon points="${left},${top} ${right},${top} ${right},${bottom} ${left},${bottom}" fill="rgba(0, 122, 255, 0.05)" stroke="none" />`;
+
+        // Função auxiliar para verificar se está oculta
+        const isOculta = (dir) => this.data.paredesOcultas?.includes(`auto_${dir}`);
+
+        // Desenha a Parede Norte
+        if (!isOculta('Norte')) {
+            svg += `<line x1="${left}" y1="${top}" x2="${right}" y2="${top}" stroke="${cNorte}" stroke-width="4" stroke-linecap="round" style="cursor:pointer;" onclick="app.editarParedeDesenho('${amb.id}', 'Norte', ${comp})" />
+                    <text x="${cx}" y="${top - 8}" class="wall-text" style="fill:${cNorte}">Norte ${pNorte ? '✓' : ''}</text>`;
+        } else {
+            // Desenha tracejado se estiver oculta
+            svg += `<line x1="${left}" y1="${top}" x2="${right}" y2="${top}" stroke="var(--text-light)" stroke-width="1.5" stroke-dasharray="4,4" style="cursor:pointer;" onclick="app.editarParedeDesenho('${amb.id}', 'Norte', ${comp})" />
+                    <text x="${cx}" y="${top - 8}" class="wall-text" style="fill:var(--text-light); font-size:8px;">Norte (vão)</text>`;
+        }
+
+        // Desenha a Parede Sul
+        if (!isOculta('Sul')) {
+            svg += `<line x1="${left}" y1="${bottom}" x2="${right}" y2="${bottom}" stroke="${cSul}" stroke-width="4" stroke-linecap="round" style="cursor:pointer;" onclick="app.editarParedeDesenho('${amb.id}', 'Sul', ${comp})" />
+                    <text x="${cx}" y="${bottom + 16}" class="wall-text" style="fill:${cSul}">Sul ${pSul ? '✓' : ''}</text>`;
+        } else {
+            svg += `<line x1="${left}" y1="${bottom}" x2="${right}" y2="${bottom}" stroke="var(--text-light)" stroke-width="1.5" stroke-dasharray="4,4" style="cursor:pointer;" onclick="app.editarParedeDesenho('${amb.id}', 'Sul', ${comp})" />
+                    <text x="${cx}" y="${bottom + 16}" class="wall-text" style="fill:var(--text-light); font-size:8px;">Sul (vão)</text>`;
+        }
+
+        // Desenha a Parede Oeste
+        if (!isOculta('Oeste')) {
+            svg += `<line x1="${left}" y1="${top}" x2="${left}" y2="${bottom}" stroke="${cOeste}" stroke-width="4" stroke-linecap="round" style="cursor:pointer;" onclick="app.editarParedeDesenho('${amb.id}', 'Oeste', ${larg})" />
+                    <text x="${left - 12}" y="${cy}" class="wall-text" style="fill:${cOeste}; text-anchor: end;">Oeste ${pOeste ? '✓' : ''}</text>`;
+        } else {
+            svg += `<line x1="${left}" y1="${top}" x2="${left}" y2="${bottom}" stroke="var(--text-light)" stroke-width="1.5" stroke-dasharray="4,4" style="cursor:pointer;" onclick="app.editarParedeDesenho('${amb.id}', 'Oeste', ${larg})" />
+                    <text x="${left - 12}" y="${cy}" class="wall-text" style="fill:var(--text-light); font-size:8px; text-anchor: end;">Oeste (vão)</text>`;
+        }
+
+        // Desenha a Parede Leste
+        if (!isOculta('Leste')) {
+            svg += `<line x1="${right}" y1="${top}" x2="${right}" y2="${bottom}" stroke="${cLeste}" stroke-width="4" stroke-linecap="round" style="cursor:pointer;" onclick="app.editarParedeDesenho('${amb.id}', 'Leste', ${larg})" />
+                    <text x="${right + 12}" y="${cy}" class="wall-text" style="fill:${cLeste}; text-anchor: start;">Leste ${pLeste ? '✓' : ''}</text>`;
+        } else {
+            svg += `<line x1="${right}" y1="${top}" x2="${right}" y2="${bottom}" stroke="var(--text-light)" stroke-width="1.5" stroke-dasharray="4,4" style="cursor:pointer;" onclick="app.editarParedeDesenho('${amb.id}', 'Leste', ${larg})" />
+                    <text x="${right + 12}" y="${cy}" class="wall-text" style="fill:var(--text-light); font-size:8px; text-anchor: start;">Leste (vão)</text>`;
+        }
+
+        svg += `</svg>`;
+        container.innerHTML = svg;
+    },
+
+        editarParedeDesenho(ambId, direcao, comprimentoReal) {
+        const amb = this.data.ambientes.find(a => a.id === ambId);
+        if (!amb) return;
+
+        const wallId = `auto_${direcao}`;
+        let parede = amb.paredes?.find(p => p.id === wallId);
+        const isOculta = this.data.paredesOcultas?.includes(wallId);
+        
+        this._currentWallData = { ambId, direcao, wallId, compPadrao: comprimentoReal, isOculta };
+
+        document.getElementById('modal-parede-titulo').textContent = `Parede ${direcao}`;
+        document.getElementById('modal-parede-comp').value = parede ? parede.comp : comprimentoReal.toFixed(2);
+        document.getElementById('modal-parede-alt').value = parede ? parede.alt : "2.70";
+
+        // Atualiza o botão de ocultar/mostrar dinamicamente
+        const btnOcultar = document.getElementById('btn-ocultar-parede');
+        if (btnOcultar) {
+            if (isOculta) {
+                btnOcultar.textContent = "👁️ Exibir Parede (Desfazer Vão)";
+                btnOcultar.style.color = "var(--primary)";
+                btnOcultar.onclick = () => this.exibirParedeModal();
+            } else {
+                btnOcultar.textContent = "🚫 Ocultar (Vão Aberto)";
+                btnOcultar.style.color = "var(--danger)";
+                btnOcultar.onclick = () => this.ocultarParedeModal();
+            }
+        }
+
+        document.getElementById('parede-measure-modal').classList.add('active');
+        setTimeout(() => document.getElementById('modal-parede-alt').focus(), 300);
+        this.haptic('light');
+    },
+
+    closeModalParede() {
+        document.getElementById('parede-measure-modal').classList.remove('active');
+        this._currentWallData = null;
+    },
+
+    salvarParedeModal() {
+        if (!this._currentWallData) return;
+        const comp = parseFloat(document.getElementById('modal-parede-comp').value);
+        const alt = parseFloat(document.getElementById('modal-parede-alt').value);
+        if (!comp || !alt) return this.showToast("Preencha comprimento e altura.", 'warning');
+
+        const amb = this.data.ambientes.find(a => a.id === this._currentWallData.ambId);
+        if (!amb) return;
+
+        const { direcao, wallId } = this._currentWallData;
+        let parede = amb.paredes?.find(p => p.id === wallId);
+        
+        if (parede) {
+            parede.comp = comp;
+            parede.alt = alt;
+        } else {
+            if (!amb.paredes) amb.paredes = [];
+            amb.paredes.push({ id: wallId, nome: `Parede ${direcao}`, comp, alt });
+        }
+
+        this.saveLocal(); this.syncToFirebase();
+        this.renderParedes(amb); this.desenharPlantaAmbiente(amb);
+        this.closeModalParede();
+        this.showToast(`Parede ${direcao} salva`, 'success'); this.haptic('medium');
+    },
+
+    ocultarParedeModal() {
+        if (!this._currentWallData) return;
+        const amb = this.data.ambientes.find(a => a.id === this._currentWallData.ambId);
+        if (!amb) return;
+        const { wallId } = this._currentWallData;
+
+        if (!this.data.paredesOcultas) this.data.paredesOcultas = [];
+        if (!this.data.paredesOcultas.includes(wallId)) this.data.paredesOcultas.push(wallId);
+
+        if (amb.paredes) amb.paredes = amb.paredes.filter(p => p.id !== wallId);
+
+        this.saveLocal(); this.syncToFirebase();
+        this.renderParedes(amb); this.desenharPlantaAmbiente(amb);
+        this.closeModalParede();
+        this.showToast("Parede oculta (vão aberto)", 'warning'); this.haptic('heavy');
+    },
+
+        exibirParedeModal() {
+        if (!this._currentWallData) return;
+        const { wallId } = this._currentWallData;
+
+        if (this.data.paredesOcultas) {
+            this.data.paredesOcultas = this.data.paredesOcultas.filter(id => id !== wallId);
+        }
+
+        const amb = this.data.ambientes.find(a => a.id === this._currentWallData.ambId);
+        
+        this.saveLocal(); this.syncToFirebase();
+        if (amb) this.desenharPlantaAmbiente(amb);
+        
+        this.closeModalParede();
+        this.showToast("Parede restaurada", 'success'); this.haptic('medium');
+    },
+
+    // ==========================================
+    // CHECKLIST CONTEXTUAL
+    // ==========================================
     renderChecklistContextual() {
         const container = document.getElementById('ctx-checklist-container');
         if (!container) return;
@@ -1066,12 +974,15 @@ const app = {
         this.saveLocal(); this.syncToFirebase(); this.haptic('light');
     },
 
+    // ==========================================
+    // MARCENARIA
+    // ==========================================
     renderMarcenariaPage() {
         const select = document.getElementById('marc-ambiente');
         if (select) { select.innerHTML = '<option value="">— Selecione —</option>'; this.data.ambientes.forEach(a => { select.innerHTML += `<option value="${a.id}">${a.nome}</option>`; }); }
         this.renderMarcenaria();
     },
-    
+
     marcSalvar() {
         const ambId = document.getElementById('marc-ambiente').value;
         const nome = document.getElementById('marc-nome').value.trim();
@@ -1091,7 +1002,7 @@ const app = {
         this.renderMarcenaria();
         this.showToast("Móvel adicionado", 'success'); this.haptic('medium');
     },
-    
+
     marcAvaliar(item) {
         const amb = this.data.ambientes.find(a => a.id === item.ambienteId);
         if (!amb) return { status: 'sem-medida', msg: 'Ambiente não encontrado.' };
@@ -1105,7 +1016,7 @@ const app = {
         if (largNec > largDisp && profNec > compDisp) return { status: 'nao-cabe', msg: `✗ Não cabe.` };
         return { status: 'apertado', msg: `⚠ Apertado.` };
     },
-    
+
     renderMarcenaria() {
         const container = document.getElementById('marc-list');
         const totalEl = document.getElementById('marc-total');
@@ -1134,7 +1045,7 @@ const app = {
             container.appendChild(card);
         });
     },
-    
+
     marcExcluir(id) {
         if (!confirm("Excluir?")) return;
         this.data.marcenaria = this.data.marcenaria.filter(m => m.id !== id);
@@ -1143,6 +1054,9 @@ const app = {
         this.showToast("Item removido", 'warning'); this.haptic('medium');
     },
 
+    // ==========================================
+    // DIVERGÊNCIAS
+    // ==========================================
     renderDivergenciasPage() {
         const ambSelect = document.getElementById('div-ambiente');
         const filterAmb = document.getElementById('div-filter-ambiente');
@@ -1159,7 +1073,7 @@ const app = {
         const calcBox = document.getElementById('div-calculo-box'); if (calcBox) calcBox.style.display = 'none';
         this.renderDivergencias();
     },
-    
+
     divLoadElementos() {
         const ambId = document.getElementById('div-ambiente').value;
         const select = document.getElementById('div-elemento');
@@ -1173,13 +1087,13 @@ const app = {
         (amb.elementos || []).forEach((e, idx) => { select.innerHTML += `<option value="elem:${e.id}">${tiposLabel[e.tipo] || e.tipo} #${idx+1}</option>`; });
         select.innerHTML += `<option value="__outro__">✏️ Outro</option>`;
     },
-    
+
     divToggleElementoOutro() {
         const val = document.getElementById('div-elemento').value;
         const group = document.getElementById('div-elemento-outro-group');
         if (group) group.style.display = (val === '__outro__') ? 'block' : 'none';
     },
-    
+
     divCalcular() {
         const planta = parseFloat(document.getElementById('div-medida-planta').value);
         const real = parseFloat(document.getElementById('div-medida-real').value);
@@ -1195,7 +1109,7 @@ const app = {
         difEl.textContent = `${sinal}${dif.toFixed(3)} m`;
         pctEl.textContent = `${sinal}${pct.toFixed(2)}%`;
     },
-    
+
     async divFotoUpload(event) {
         const file = event.target.files[0];
         if (!file) return;
@@ -1205,7 +1119,7 @@ const app = {
         if (preview) preview.innerHTML = `<img src="${compressed}" alt="Foto">`;
         event.target.value = '';
     },
-    
+
     divSalvar() {
         const ambId = document.getElementById('div-ambiente').value;
         if (!ambId) return this.showToast("Selecione o ambiente.", 'warning');
@@ -1241,7 +1155,7 @@ const app = {
         this.renderDivergencias(); this.renderDashboard(); this.updateDivTotal();
         this.showToast("Divergência registrada", 'success'); this.haptic('heavy');
     },
-    
+
     divLimparFormulario() {
         ['div-elemento-outro', 'div-medida-planta', 'div-medida-real', 'div-descricao', 'div-pergunta'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
         const sel = document.getElementById('div-elemento'); if (sel) sel.value = '';
@@ -1250,12 +1164,12 @@ const app = {
         this.div.fotoTemp = null;
         const preview = document.getElementById('div-foto-preview'); if (preview) preview.innerHTML = '';
     },
-    
+
     updateDivTotal() {
         const el = document.getElementById('div-total');
         if (el) el.textContent = this.data.divergencias.length;
     },
-    
+
     renderDivergencias() {
         this.updateDivTotal();
         const container = document.getElementById('divergencias-list');
@@ -1285,7 +1199,7 @@ const app = {
             container.appendChild(card);
         });
     },
-    
+
     divMudarStatus(id) {
         const d = this.data.divergencias.find(x => x.id === id);
         if (!d) return;
@@ -1294,7 +1208,7 @@ const app = {
         this.saveLocal(); this.syncToFirebase();
         this.renderDivergencias(); this.renderDashboard(); this.haptic('medium');
     },
-    
+
     divExcluir(id) {
         if (!confirm("Excluir esta divergência?")) return;
         this.data.divergencias = this.data.divergencias.filter(d => d.id !== id);
@@ -1303,6 +1217,9 @@ const app = {
         this.showToast("Divergência excluída", 'warning'); this.haptic('heavy');
     },
 
+    // ==========================================
+    // PLANTA GERAL
+    // ==========================================
     renderPlanta() {
         const empty = document.getElementById('planta-empty');
         const stage = document.getElementById('planta-stage');
@@ -1449,6 +1366,9 @@ const app = {
         this.showToast("Pin adicionado", 'success'); this.haptic('medium');
     },
 
+    // ==========================================
+    // MEDIÇÃO RÁPIDA
+    // ==========================================
     openQuickMeasure() {
         this.qm = { tipo: null, ambienteId: null, paredeId: null, count: 0 };
         const ambSelect = document.getElementById('qm-ambiente');
@@ -1528,6 +1448,9 @@ const app = {
         this.haptic('light');
     },
 
+    // ==========================================
+    // VISTORIA
+    // ==========================================
     getChecklistVistoria() {
         return {
             preparacao: { label: "Preparação", itens: [
@@ -1590,7 +1513,7 @@ const app = {
         this.renderVistoriaAmbientes();
         this.renderVistoriaPendencias();
     },
-    
+
     renderVistoriaPreparacao() {
         const container = document.getElementById('vist-prep-list');
         if (!container) return;
@@ -1603,7 +1526,7 @@ const app = {
         });
         container.innerHTML = html;
     },
-    
+
     vistTogglePreparacao(idx, checked) {
         if (!this.data.vistoria.preparacao) this.data.vistoria.preparacao = {};
         this.data.vistoria.preparacao[idx] = checked;
@@ -1611,7 +1534,7 @@ const app = {
         this.renderVistoriaPreparacao();
         this.haptic('light');
     },
-    
+
     renderVistoriaAmbientes() {
         const container = document.getElementById('vist-ambientes-list');
         if (!container) return;
@@ -1639,7 +1562,7 @@ const app = {
             container.appendChild(div);
         });
     },
-    
+
     openVistoriaAmbiente(tipo) {
         this._currentVistTipo = tipo;
         const config = this.getChecklistVistoria().ambientes[tipo];
@@ -1651,7 +1574,7 @@ const app = {
         this.renderVistoriaRoteiro(tipo);
         this.navigate('vistoria-ambiente');
     },
-    
+
     renderVistoriaRoteiro(tipo) {
         const container = document.getElementById('vist-amb-roteiro');
         if (!container) return;
@@ -1693,7 +1616,7 @@ const app = {
         });
         container.innerHTML = html;
     },
-    
+
     vistSetStatus(key, status) {
         if (!this.data.vistoria.ambientes) this.data.vistoria.ambientes = {};
         if (!this.data.vistoria.ambientes[key]) this.data.vistoria.ambientes[key] = {};
@@ -1703,14 +1626,14 @@ const app = {
         this.renderVistoriaAmbientes(); this.renderDashboard();
         this.haptic('light');
     },
-    
+
     vistSetObs(key, obs) {
         if (!this.data.vistoria.ambientes) this.data.vistoria.ambientes = {};
         if (!this.data.vistoria.ambientes[key]) this.data.vistoria.ambientes[key] = {};
         this.data.vistoria.ambientes[key].obs = obs;
         this.saveLocal(); this.syncToFirebase();
     },
-    
+
     async vistAddFoto(key, event) {
         const file = event.target.files[0];
         if (!file) return;
@@ -1724,7 +1647,7 @@ const app = {
         event.target.value = '';
         this.showToast("Foto adicionada", 'success'); this.haptic('medium');
     },
-    
+
     vistSalvarObsGeral() {
         const el = document.getElementById('vist-amb-obs-geral');
         if (!el || !this._currentVistTipo) return;
@@ -1732,7 +1655,7 @@ const app = {
         this.data.vistoria.obsGeral[this._currentVistTipo] = el.value;
         this.saveLocal(); this.syncToFirebase();
     },
-    
+
     renderVistoriaPendencias() {
         const container = document.getElementById('vist-pendencias-list');
         if (!container) return;
@@ -1759,7 +1682,7 @@ const app = {
             container.appendChild(div);
         });
     },
-    
+
     vistLimparPreparacao() {
         if (!confirm("Tem certeza que deseja limpar o checklist de preparação?")) return;
         this.data.vistoria.preparacao = {};
@@ -1786,6 +1709,9 @@ const app = {
         this.showToast("Ambiente limpo", 'success'); this.haptic('heavy');
     },
 
+    // ==========================================
+    // RELATÓRIOS
+    // ==========================================
     renderRelatorio() {
         const container = document.getElementById('report-content');
         if (!container) return;
@@ -1801,7 +1727,7 @@ const app = {
         let html = `
             <div class="report-header">
                 <h1>Relatório de Medição e Planejamento</h1>
-                <p><strong>Empreendimento:</strong> ${this.data.projeto.nome} Unidade 801A</p>
+                <p><strong>Empreendimento:</strong> ${this.data.projeto.nome} (Unidade 101/402)</p>
                 <p><strong>Data da Visita:</strong> ${this.data.projeto.dataVisita} &nbsp;|&nbsp; <strong>Emissão:</strong> ${hoje}</p>
                 <p><strong>Área Total Prevista na Planta:</strong> 55,70 m²</p>
             </div>
@@ -1906,7 +1832,7 @@ const app = {
         setTimeout(() => { window.print(); }, 300);
         this.haptic('medium');
     },
-    
+
     printReportInNewTab() {
         this.renderRelatorio();
         const reportHtml = document.getElementById('report-content').innerHTML;
@@ -1935,7 +1861,7 @@ const app = {
         win.onload = () => { setTimeout(() => { win.focus(); win.print(); }, 500); };
         this.haptic('medium');
     },
-    
+
     exportCSV() {
         let csv = '\uFEFF';
         csv += 'Ambiente;Tipo;Identificação;Largura;Altura;Peitoril;Área\n';

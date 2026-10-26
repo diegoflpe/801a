@@ -899,3 +899,37 @@ textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 
     text-anchor: middle;
     pointer-events: none;
 }
+
+/* ============================================ */
+/* DESENHO DA PLANTA DO AMBIENTE (SVG)          */
+/* ============================================ */
+.wall-edge {
+    stroke: var(--text); 
+    stroke-width: 4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    cursor: pointer;
+    transition: stroke 0.2s, stroke-width 0.2s;
+}
+.wall-edge:hover, .wall-edge:active {
+    stroke: var(--primary);
+    stroke-width: 6;
+}
+.wall-text {
+    font-size: 10px;
+    fill: var(--text-light);
+    text-anchor: middle;
+    font-weight: 600;
+    pointer-events: none;
+}
+.dimension-line {
+    stroke: var(--border);
+    stroke-width: 1;
+    stroke-dasharray: 4;
+}
+.dimension-text {
+    font-size: 10px;
+    fill: var(--text-light);
+    text-anchor: middle;
+    font-weight: 500;
+}
