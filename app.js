@@ -78,7 +78,7 @@ function detectTipoAmbiente(nome) {
 // ==========================================
 const app = {
     data: {
-        projeto: { id: "apto101", nome: "Apto Tipo 02", dataVisita: new Date().toISOString().split('T')[0] },
+        projeto: { id: "apto801A", nome: "Apto 801A 💝", dataVisita: new Date().toISOString().split('T')[0] },
         ambientes: [],
         checklist: [],
         plantaImagem: null,
@@ -1727,7 +1727,7 @@ const app = {
         let html = `
             <div class="report-header">
                 <h1>Relatório de Medição e Planejamento</h1>
-                <p><strong>Empreendimento:</strong> ${this.data.projeto.nome} (Unidade 101/402)</p>
+                <p><strong>Empreendimento:</strong> ${this.data.projeto.nome} (Unidade 801A)</p>
                 <p><strong>Data da Visita:</strong> ${this.data.projeto.dataVisita} &nbsp;|&nbsp; <strong>Emissão:</strong> ${hoje}</p>
                 <p><strong>Área Total Prevista na Planta:</strong> 55,70 m²</p>
             </div>
