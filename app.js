@@ -5,12 +5,12 @@ import { getFirestore, doc, setDoc, getDoc, onSnapshot, enableIndexedDbPersisten
 // FIREBASE CONFIG (COLOQUE SUAS CHAVES AQUI)
 // ==========================================
 const firebaseConfig = {
-  apiKey: "SEU_API_KEY_AQUI",
-  authDomain: "SEU_PROJETO.firebaseapp.com",
-  projectId: "SEU_PROJETO_ID",
-  storageBucket: "SEU_PROJETO.appspot.com",
-  messagingSenderId: "SEU_SENDER_ID",
-  appId: "SEU_APP_ID"
+  apiKey: "AIzaSyBxhp9c0GHGX0JHEjda9CBmuKTfD0MdQrg",
+  authDomain: "measurements-bf85a.firebaseapp.com",
+  projectId: "measurements-bf85a",
+  storageBucket: "measurements-bf85a.firebasestorage.app",
+  messagingSenderId: "116446528416",
+  appId: "1:116446528416:web:eefd425fe30e3fb75c1ac5"
 };
 const firebaseApp = initializeApp(firebaseConfig);
 const db = getFirestore(firebaseApp);
